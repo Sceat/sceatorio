@@ -1,0 +1,11 @@
+{
+    "name": "SceatRpgPack",
+    "version": "0.1.0",
+    "title": "Sceat's RPG pack",
+    "author": "Sceat",
+    "contact": "",
+    "homepage": "",
+    "factorio_version": "0.16",
+    "dependencies": ["base >= 0.16"],
+    "description": "This mod feature a set of mods for a noice multiplayer experience"
+}
