@@ -9,9 +9,10 @@ function findNewSpawn()
 	local existingSpawns = {}
 	table.insert(existingSpawns, {x=0,y=0}) -- inserting main spawn
 	for _,force in pairs(game.forces) do
-		if force.name == 'enemy' then continue end
-		local teamSpawn = force.get_spawn_position('nauvis')
-		table.insert(existingSpawns, teamSpawn)
+		if not force.name == 'enemy' then
+			local teamSpawn = force.get_spawn_position('nauvis')
+			table.insert(existingSpawns, teamSpawn)
+		end
 	end
 end
 
