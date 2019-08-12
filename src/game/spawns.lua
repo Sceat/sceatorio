@@ -78,7 +78,7 @@ function onCreate(e)
 
 	player.force.set_spawn_position(spawn, surface)
 
-	surface.request_to_generate_chunks(spawn, 4)
+	surface.request_to_generate_chunks(spawn, 13)
 	surface.force_generate_chunk_requests()
 
 	local baseArea = getAreaAroundPos(spawn, BASE_SIZE)
