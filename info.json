@@ -1,11 +1,11 @@
 {
-    "name": "SceatRpgPack",
-    "version": "0.16.0",
-    "title": "Sceat's RPG pack",
+    "name": "SceatMulti",
+    "version": "0.17.0",
+    "title": "Sceat Multi",
     "author": "Sceat",
     "contact": "",
     "homepage": "",
-    "factorio_version": "0.16",
-    "dependencies": ["base >= 0.16"],
-    "description": "This mod feature a set of mods for a noice multiplayer experience"
+    "factorio_version": "0.17",
+    "dependencies": ["base >= 0.17"],
+    "description": "I MADE THIS MOD FAST FOR MY PERSONAL USE, IF YOU'RE INTERESTED IN THE FEATURES CONTACT ME ON TWITTER @Sceat_ SO I CAN HELP YOU START A GAME WITH IT\n- Separate spawn\n- Death messages, Researchs and chat is shared\n- Prevent griefing\n- When a player is offline, his buildings can't be destroyed, and enemies will stop attacking\n- Forces shares chart around players\n- Real time player list"
 }

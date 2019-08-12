@@ -7,10 +7,10 @@ function protectForce(playerForce, protect)
 	end
 end
 
-script.on_event(defines.events.on_player_left_game, function(event)
+function protectPlayer(event)
 	protectForce(game.players[event.player_index].force, true)
-end)
+end
 
-script.on_event(defines.events.on_player_joined_game, function(event)
+function unProtectPlayer(event)
 	protectForce(game.players[event.player_index].force, false)
-end)
+end
