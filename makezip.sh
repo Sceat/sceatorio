@@ -1,5 +1,7 @@
 #!/bin/sh
-FOLDER="SceatMulti_${1}"
+VERSION="0.18.6"
+FOLDER="SceatMulti_${VERSION}"
+
 mkdir $FOLDER
 cp -r locale src control.lua info.json $FOLDER/
 zip -r $FOLDER.zip $FOLDER
