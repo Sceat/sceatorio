@@ -61,17 +61,17 @@ function FindUngeneratedCoordinates(minDistChunks, maxDistChunks, surface)
         tryCounter = tryCounter + 1
         if (tryCounter > maxTries) then
             break
- 
+
         -- Check that the distance is within the min,max specified
         elseif ((distSqrd < minDistSqr) or (distSqrd > maxDistSqr)) then
             -- Keep searching!
-        
+
         -- Check there are no generated chunks in a 10x10 area.
         elseif IsChunkAreaUngenerated(chunkPos, 6, surface) then
             position.x = (chunkPos.x*CHUNK_SIZE) + (CHUNK_SIZE/2)
             position.y = (chunkPos.y*CHUNK_SIZE) + (CHUNK_SIZE/2)
             break -- SUCCESS
-        end       
+        end
     end
 
     return position
@@ -106,12 +106,12 @@ function cropBorder(surface, centerPos, chunkArea, tileRadius,tile)
             end
 
             -- Create a tree ring
-            if ((distVar < tileRadius) and 
+            if ((distVar < tileRadius) and
                 (distVar > tileRadius-10)) then
-                surface.create_entity({name="tree-snow-a", amount=1, position={i, j}})
+                surface.create_entity({name="tree-03", amount=1, position={i, j}})
             end
         end
-    end    
+    end
     surface.set_tiles(dirtTiles)
 end
 
@@ -129,7 +129,7 @@ function waterBorder(surface, centerPos, chunkArea, tileRadius,modifier)
             local distVar = math.floor((centerPos.x - i)^2 + (centerPos.y - j)^2)
 
             -- Create a circle of water
-            if ((distVar < tileRadSqr+modifier) and 
+            if ((distVar < tileRadSqr+modifier) and
                 (distVar > tileRadSqr)) then
                 table.insert(waterTiles, {name = "water", position ={i,j}})
             end
@@ -159,4 +159,4 @@ function CreateWaterStrip(surface, leftPos, length)
         table.insert(waterTiles, {name = "water", position={leftPos.x+i,leftPos.y}})
     end
     surface.set_tiles(waterTiles)
-end 
+end
