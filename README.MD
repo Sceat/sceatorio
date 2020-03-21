@@ -17,7 +17,7 @@ A multiplayer pve factorio mod
 ```sh
 git clone git@github.com:Sceat/sceatorio.git
 cd sceatorio
-sh makezip.sh "0.18.5"
+sh makezip.sh
 
 # you now have a zip archive of the mod
 ```
