@@ -7,7 +7,7 @@ function playerChart()
 						if member.connected then
 							local x = math.floor(member.position.x)
 							local y = math.floor(member.position.y)
-							force.chart('Game', {{x-70,y-70},{x+70,y+70}})
+							force.chart('nauvis', {{x-70,y-70},{x+70,y+70}})
 						end
 					end
 				end

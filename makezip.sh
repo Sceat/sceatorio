@@ -1,5 +1,5 @@
 #!/bin/sh
-VERSION="0.18.6"
+VERSION="0.18.7"
 FOLDER="SceatMulti_${VERSION}"
 
 mkdir $FOLDER
