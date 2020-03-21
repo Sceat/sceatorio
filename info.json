@@ -5,7 +5,7 @@
     "author": "Sceat",
     "contact": "@Sceat_",
     "homepage": "",
-    "factorio_version": "0.18.5",
+    "factorio_version": "0.18",
     "dependencies": ["base >= 0.18"],
     "description": "I MADE THIS MOD FAST FOR MY PERSONAL USE, IF YOU'RE INTERESTED IN THE FEATURES CONTACT ME ON TWITTER @Sceat_ SO I CAN HELP YOU START A GAME WITH IT\n- Separate spawn\n- Death messages, Researchs and chat is shared\n- Prevent griefing\n- When a player is offline, his buildings can't be destroyed, and enemies will stop attacking\n- Forces shares chart around players\n- Real time player list"
 }
