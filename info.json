@@ -7,5 +7,5 @@
     "homepage": "",
     "factorio_version": "0.18",
     "dependencies": ["base >= 0.18"],
-    "description": "I MADE THIS MOD FAST FOR MY PERSONAL USE, IF YOU'RE INTERESTED IN THE FEATURES CONTACT ME ON TWITTER @Sceat_ SO I CAN HELP YOU START A GAME WITH IT\n- Separate spawn\n- Death messages, Researchs and chat is shared\n- Prevent griefing\n- When a player is offline, his buildings can't be destroyed, and enemies will stop attacking\n- Forces shares chart around players\n- Real time player list"
+    "description": "# Sceatorio\nA multiplayer pve/pvp factorio mod\n>  factorio v0.18.5\n## Features\n- When joining the game you get your own force and your own spawn with starting resources (remake of oarc)\n- Death messages, Researchs and chat is shared across teams\n- PvP is enabled, that prevent griefing and stealing and allow turrets to kill other players\n- When a player is offline, his buildings can't be destroyed, and enemies will stop targeting his base\n- When a player is online, everyone can see him and his position (it's friendly after all, go solo if you don't want too see anyone)\n- Real time player list\n## Todo\n- Protect electricity\n## Build mod\n```sh\ngit clone git@github.com:Sceat/sceatorio.git\ncd sceatorio\nsh package.sh\n```"
 }

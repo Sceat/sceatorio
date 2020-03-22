@@ -1,5 +1,5 @@
 # Sceatorio
-A multiplayer pve factorio mod
+A multiplayer pve/pvp factorio mod
 
 >  factorio v0.18.5
 
@@ -12,12 +12,14 @@ A multiplayer pve factorio mod
 - When a player is online, everyone can see him and his position (it's friendly after all, go solo if you don't want too see anyone)
 - Real time player list
 
+## Todo
+
+- Protect electricity
+
 ## Build mod
 
 ```sh
 git clone git@github.com:Sceat/sceatorio.git
 cd sceatorio
-sh makezip.sh
-
-# you now have a zip archive of the mod
+sh package.sh
 ```
