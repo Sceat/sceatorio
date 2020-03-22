@@ -3,6 +3,10 @@ A multiplayer pve/pvp factorio mod
 
 >  factorio v0.18.5
 
+## Use
+
+Search through the mod ui `sceatorio`
+
 ## Features
 
 - When joining the game you get your own force and your own spawn with starting resources (remake of oarc)
@@ -16,10 +20,3 @@ A multiplayer pve/pvp factorio mod
 
 - Protect electricity
 
-## Build mod
-
-```sh
-git clone git@github.com:Sceat/sceatorio.git
-cd sceatorio
-sh package.sh
-```
