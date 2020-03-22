@@ -30,5 +30,5 @@ function onSearchStart(e)
 end
 
 function onSearchEnd(e)
-	say(e.research.force.name.." a finit la recherche oWo")
+	say(e.research.force.name.." finished a research")
 end
