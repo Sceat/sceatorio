@@ -2,12 +2,17 @@
 VERSION=$1
 FILE="info.json"
 
-echo "releasing sceatorio:$VERSION
+echo "
+releasing sceatorio:$VERSION
 "
-echo ">> cleaning up.."
+echo "
+>> cleaning up..
+"
 rm $FILE
 
-echo ">> generating $FILE"
+echo "
+>> generating $FILE
+"
 /bin/cat <<EOM >$FILE
 {
     "name": "Sceatorio",
@@ -22,10 +27,14 @@ echo ">> generating $FILE"
 }
 EOM
 
-echo ">> pushing $FILE"
+echo "
+>> pushing $FILE
+"
 git add .
-git commit -m "preparing $FILE for sceatorio:$VERSION release"
+git commit -m "sceatorio:$VERSION release"
 git push
-echo ">> pushing tags"
+echo "
+>> pushing tags
+"
 git tag $VERSION
 git push --tags
