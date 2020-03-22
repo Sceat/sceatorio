@@ -1,7 +1,7 @@
 function say(msg)
 	for _,p in pairs(game.players) do
 		if p.connected then
-			p.print("[RPG] "..msg)
+			p.print("[sceatorio] "..msg)
 		end
 	end
 end

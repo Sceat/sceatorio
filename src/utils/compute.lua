@@ -139,6 +139,24 @@ function waterBorder(surface, centerPos, chunkArea, tileRadius,modifier)
     surface.set_tiles(waterTiles)
 end
 
+function createTerrain(surface, centerPos, chunkArea, tileRadius,tile)
+    local dirtTiles = {}
+    for i=chunkArea.left_top.x,chunkArea.right_bottom.x,1 do
+        for j=chunkArea.left_top.y,chunkArea.right_bottom.y,1 do
+
+            local distVar1 = math.floor(math.max(math.abs(centerPos.x - i), math.abs(centerPos.y - j)))
+            local distVar2 = math.floor(math.abs(centerPos.x - i) + math.abs(centerPos.y - j))
+            local distVar = math.max(distVar1*1.1, distVar2 * 0.707*1.1);
+
+            -- Fill in all unexpected water in a circle
+            if (distVar < tileRadius+2) then
+                table.insert(dirtTiles, {name = tile, position ={i,j}})
+            end
+        end
+    end
+    surface.set_tiles(dirtTiles)
+end
+
 -- Function to generate a resource patch, of a certain size/amount at a pos.
 function GenerateResourcePatch(surface, resourceName, diameter, pos, amount)
     local midPoint = math.floor(diameter/2)

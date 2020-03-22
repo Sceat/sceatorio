@@ -1,15 +1,15 @@
 function formattime_hours_mins(ticks)
 
 	local seconds = ticks / 60
-  
+
 	local minutes = math.floor((seconds)/60)
-  
+
 	local hours   = math.floor((minutes)/60)
-  
+
 	local minutes = math.floor(minutes - 60*hours)
-  
+
 	return string.format("%dh:%02dm", hours, minutes)
-  
+
   end
 
   -- Shorter way to add a label with a style
@@ -241,22 +241,22 @@ function ApplyStyle (guiIn, styleIn)
 
         guiIn.style[k]=v
 
-    end 
+    end
 
 end
 
 function CreatePlayerListGui(event)
 
 	local player = game.players[event.player_index]
-  
+
 	if player.gui.top.playerList == nil then
-  
+
 		player.gui.top.add{name="playerList", type="button", caption="Player List"}
-  
-	end   
-  
+
+	end
+
   end
-  
+
   local function drawPlayerListGui(player, frame, scrollFrame)
 	  ApplyStyle(scrollFrame, my_player_list_fixed_width_style)
 	  scrollFrame.horizontal_scroll_policy = "never"
@@ -268,7 +268,7 @@ function CreatePlayerListGui(event)
 			  AddLabel(scrollFrame, player.name.."_plist", caption_str, my_player_list_style)
 		  end
 	  end
-  
+
 	  -- List offline players
 	  for _,player in pairs(game.players) do
 		  if (not player.connected) then
@@ -280,7 +280,7 @@ function CreatePlayerListGui(event)
 	  local spacer = scrollFrame.add{type="label", caption="     ", name="plist_spacer_plist"}
 	  ApplyStyle(spacer, my_player_list_style_spacer)
   end
-  
+
   function updatePlayerList(player)
 	  local frame = player.gui.left["playerList-panel"]
 	  if(frame) then
@@ -302,7 +302,7 @@ function CreatePlayerListGui(event)
 		  end
 	  end
   end
-  
+
   local function ExpandPlayerListGui(player)
 	  local frame = player.gui.left["playerList-panel"]
 	  if (frame) then
@@ -313,23 +313,23 @@ function CreatePlayerListGui(event)
 		  drawPlayerListGui(player,frame,scrollFrame)
 	  end
   end
-  
-  
-  
-  function PlayerListGuiClick(event) 
-  
+
+
+
+  function PlayerListGuiClick(event)
+
 	  if not (event and event.element and event.element.valid) then return end
-  
+
 	  local player = game.players[event.element.player_index]
-  
+
 	  local name = event.element.name
-  
-  
-  
+
+
+
 	  if (name == "playerList") then
-  
-		  ExpandPlayerListGui(player)        
-  
-	  end
-  
+
+		  ExpandPlayerListGui(player)
+
+      end
+
   end

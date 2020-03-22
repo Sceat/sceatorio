@@ -5,7 +5,7 @@ require("src.game.radars")
 require("src.game.playerList")
 
 script.on_init(function()
-	game.surfaces['nauvis'].request_to_generate_chunks({0,0}, 4)
+	onInit()
 end)
 
 script.on_event(defines.events.on_player_died, function(e)
@@ -21,6 +21,9 @@ script.on_event(defines.events.on_player_joined_game, function(e)
 	unProtectPlayer(e)
 	local player = game.players[e.player_index]
 	player.force.chart(player.surface,{{x = -200, y = -200}, {x = 200, y = 200}})
+	if(player.force.name == 'lobby') then
+		showSpawnGui(player)
+	end
 end)
 
 script.on_event(defines.events.on_player_created, function(e)
@@ -52,4 +55,5 @@ end)
 
 script.on_event(defines.events.on_gui_click, function(e)
 	PlayerListGuiClick(e)
+	onButtonClick(e)
 end)
