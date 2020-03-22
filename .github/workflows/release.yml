@@ -1,35 +1,11 @@
 on: push
 name: Release
 jobs:
-  release-github:
+  release:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
-      - name: Create Factorio mod package
-        uses: Roang-zero1/factorio-mod-package@master
-      - name: Create GitHub release
-        uses: Roang-zero1/github-create-release-action@master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          UPDATE_EXISTING: "true"
-          VERSION_REGEX: ^[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+
-      - name: Tag Filter
-        uses: actions/bin/filter@3c0b4f0e63ea54ea5df2914b4fabf383368cd0da
-        with:
-          args: tag
-      - name: Upload GitHub artifacts
-        uses: Roang-zero1/github-upload-release-artifacts-action@master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: dist/
-  release-modportal:
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - name: Create Factorio mod package
-        uses: Roang-zero1/factorio-mod-package@master
-      - name: Factorio release
+      - name: Release mod
         uses: Roang-zero1/factorio-create-release-action@master
         with:
           factorio_password: ${{ secrets.FACTORIO_PASSWORD }}
