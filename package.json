@@ -1,0 +1,7 @@
+{
+  "name": "sceatorio",
+  "version": "0.18.8",
+  "scripts": {
+    "postversion": "git push && git push --tags"
+  }
+}
