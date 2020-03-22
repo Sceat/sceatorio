@@ -1,8 +1,6 @@
 # Sceatorio
 A multiplayer pve/pvp factorio mod
 
-![Release](https://github.com/Sceat/sceatorio/workflows/Check%20&%20Release/badge.svg?event=release)
-
 >  factorio v0.18.5
 
 ## Use
