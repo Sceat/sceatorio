@@ -1,6 +1,6 @@
 #!/bin/sh
 VERSION=$1
-FILE="info.json"
+FILE=info.json
 
 echo "
 releasing sceatorio:$VERSION
