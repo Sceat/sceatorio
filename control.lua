@@ -34,10 +34,6 @@ script.on_event(defines.events.on_console_chat, function(e)
     forwardMsg(e)
 end)
 
-script.on_event(defines.events.on_research_finished, function(e)
-	onSearchEnd(e)
-end)
-
 script.on_event(defines.events.on_research_started, function(e)
 	onSearchStart(e)
 end)

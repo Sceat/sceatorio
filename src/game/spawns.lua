@@ -107,7 +107,7 @@ function showSpawnGui(player)
 	widgetInner.add({type="label",caption=" "})
 	for _,p in pairs(game.connected_players) do
 		if(p.force.name ~= 'lobby') then
-			widgetInner.add({type="button",name="join_mate",caption=p.name})
+			widgetInner.add({type="button",name=("joinMate="..(p.name)),caption=("team up with "..(p.name))})
 		end
 	end
 end
@@ -226,15 +226,6 @@ function onButtonClick(event)
 	if (name == "spawn_alone") then
 		player.gui.center.spawn_gui.destroy()
 		spawnAlone(player)
-	elseif(name == "join_mate") then
-		local playerToJoin = game.players[event.element.caption]
-		if(playerToJoin ~= nil and playerToJoin.connected) then
-			say((player.name).." wants to join "..(event.element.caption))
-			askToJoin(playerToJoin, player)
-			player.gui.center.spawn_gui.destroy()
-		else
-			player.print((playerToJoin.name).." is offline")
-		end
 	else
 		local splitted = {}
 		for k, v in string.gmatch(name, "(%w+)=(%w+)") do
@@ -251,6 +242,15 @@ function onButtonClick(event)
 			if(playerJoining.connected) then
 				playerJoining.print((player.name).." refused to let you join")
 				showSpawnGui(playerJoining)
+			end
+		elseif(splitted.joinMate ~= nil) then
+			local playerToJoin = game.players[splitted.joinMate]
+			if(playerToJoin ~= nil and playerToJoin.connected) then
+				say((player.name).." wants to join "..(event.element.caption))
+				askToJoin(playerToJoin, player)
+				player.gui.center.spawn_gui.destroy()
+			else
+				player.print((playerToJoin.name).." is offline")
 			end
 		end
 	end

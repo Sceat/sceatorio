@@ -28,7 +28,3 @@ function onSearchStart(e)
 		p.print{"player-started-research",e.research.force.name, e.research.localised_name}
 	end)
 end
-
-function onSearchEnd(e)
-	say(e.research.force.name.." finished a research")
-end
