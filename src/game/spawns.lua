@@ -135,31 +135,110 @@ function joinMate(player, playerToJoin)
 	say((player.name).." joined "..(playerToJoin.name).."'s team!")
 end
 
-function spawnAlone(player)
+function setAlly(f1, f2)
+	f1.set_cease_fire(f2, true)
+	f1.set_friend(f2, true)
+	f2.set_cease_fire(f1, true)
+	f2.set_friend(f1, true)
+end
+
+function distance ( x1, y1, x2, y2 )
+  local dx = x1 - x2
+  local dy = y1 - y2
+  return math.sqrt ( dx * dx + dy * dy )
+end
+
+function findNearestForce(position)
+	local surface = game.surfaces.nauvis
+	local min_distance = nil
+	local nearest_force = nil
+	for _,force in pairs(game.forces) do
+		if(force.name ~= 'enemy') and (force.name ~= "neutral") and (force.name ~= "lobby") and (force.name ~= "player") then
+			local f1keys = {}
+			for k, v in string.gmatch(force.name, "(%w+)=(%w+)") do
+				f1keys[k]=v
+			end
+			if(f1keys.enemy == nil) then
+				local spawn = force.get_spawn_position(surface)
+				local dist = distance(position.x,position.y,spawn.x,spawn.y)
+				if(min_distance == nil) or (min_distance > dist) then
+					min_distance = dist
+					nearest_force = force
+				end
+			end
+		end
+	end
+	return {force=nearest_force,dist=min_distance}
+end
+
+function onChunkGen(e)
+	for _,entity in pairs(game.surfaces.nauvis.find_entities_filtered({force='enemy',area=e.area})) do
+		local nearest = findNearestForce(entity.position)
+		if(nearest.force ~= nil) then
+			entity.force = ('enemy='..(nearest.force.name))
+			if(nearest.dist < 220) then
+				entity.destroy()
+			elseif (nearest.dist < 500) and (math.random(10,30) < 18) then
+				entity.destroy()
+			end
+		end
+	end
+end
+
+function createPlayerEnemyForce(player)
+	local force_name = ('enemy='..(player.name))
+	game.create_force(force_name)
+	local force = game.forces[force_name]
+	force.ai_controllable = true
+
+	local enemyForce = game.forces.enemy
+	setAlly(force, enemyForce)
+
+	for _,f1 in pairs(game.forces) do
+		for _,f2 in pairs(game.forces) do
+			if(f1.name ~= f2.name) then
+				local f1keys = {}
+				local f2keys = {}
+				for k, v in string.gmatch(f1.name, "(%w+)=(%w+)") do
+					f1keys[k]=v
+				end
+				for k, v in string.gmatch(f2.name, "(%w+)=(%w+)") do
+					f2keys[k]=v
+				end
+				if(f1keys.enemy ~= nil) and (f2keys.enemy ~= nil) then
+					setAlly(f1,f2)
+				end
+			end
+		end
+	end
+end
+
+function generatePlayerSpawn(player)
 	say((player.name).." just created a new Empire! creating terrain.. (wait a few sec)")
 	local surface = player.surface
 	game.create_force(player.name)
 	player.force = player.name
 	local spawn = FindUngeneratedCoordinates(MIN_SPAWN_DIST,MAX_SPAWN_DIST,surface)
-
+	createPlayerEnemyForce(player)
 	player.force.set_spawn_position(spawn, surface)
+	surface.request_to_generate_chunks(spawn, 3)
+	if global.tp == nil then
+		global.tp = {}
+	end
+	table.insert(global.tp, {player=player,spawn=spawn,time=300,time_chunk=100})
+	player.print('you will be teleported to your spawn in 5s')
+end
 
-	surface.request_to_generate_chunks(spawn, 13)
-	surface.force_generate_chunk_requests()
+function spawnAlone(player, spawn)
+	local surface = player.surface
 
 	local baseArea = getAreaAroundPos(spawn, BASE_SIZE)
 	local safeZoneArea = getAreaAroundPos(spawn, SAFE_ZONE)
-	local reducedZoneArea = getAreaAroundPos(spawn, WARN_ZONE)
-
-	clearAliens(surface, safeZoneArea)
-	reduceAliens(surface, reducedZoneArea)
 
 	RemoveInCircle(surface, baseArea, "tree", spawn, BASE_SIZE+5)
 	RemoveInCircle(surface, baseArea, "resource", spawn, BASE_SIZE+5)
 	RemoveInCircle(surface, baseArea, "cliff", spawn, BASE_SIZE+5)
-
 	surface.destroy_decoratives(baseArea)
-
 	cropBorder(surface, spawn, baseArea, BASE_SIZE,TILE_NAME)
 	waterBorder(surface, spawn, safeZoneArea, BASE_SIZE,WATER_MODIFIER)
 
@@ -215,8 +294,24 @@ function spawnAlone(player)
 	CreateWaterStrip(surface, {x=spawn.x+WATER_SPAWN_OFFSET_X, y=spawn.y+WATER_SPAWN_OFFSET_Y+2}, WATER_SPAWN_LENGTH)
 	CreateWaterStrip(surface, {x=spawn.x+WATER_SPAWN_OFFSET_X, y=spawn.y+WATER_SPAWN_OFFSET_Y+3}, WATER_SPAWN_LENGTH)
 	CreateWaterStrip(surface, {x=spawn.x+WATER_SPAWN_OFFSET_X, y=spawn.y+WATER_SPAWN_OFFSET_Y+4}, WATER_SPAWN_LENGTH)
+end
 
-	player.teleport(spawn, surface)
+function on_tick(event)
+	if global.tp ~= nil then
+		for _,t in pairs(global.tp) do
+			t.time = t.time-1
+			t.time_chunk = t.time_chunk-1
+			if(t.time_chunk < 1) then
+				spawnAlone(t.player, t.spawn)
+				t.time_chunk = 1000
+			end
+			if(t.time < 1 and t.player.connected) then
+				say('teleporting '..(t.player.name)..' to his spawn')
+				t.player.teleport(t.spawn,game.surfaces.nauvis)
+				global.tp[_]=nil
+			end
+		end
+	end
 end
 
 function onButtonClick(event)
@@ -225,7 +320,7 @@ function onButtonClick(event)
 	local name = event.element.name
 	if (name == "spawn_alone") then
 		player.gui.center.spawn_gui.destroy()
-		spawnAlone(player)
+		generatePlayerSpawn(player)
 	else
 		local splitted = {}
 		for k, v in string.gmatch(name, "(%w+)=(%w+)") do

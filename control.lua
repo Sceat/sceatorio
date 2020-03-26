@@ -8,6 +8,10 @@ script.on_init(function()
 	onInit()
 end)
 
+script.on_event(defines.events.on_chunk_generated, function(e)
+	onChunkGen(e)
+end)
+
 script.on_event(defines.events.on_player_died, function(e)
 	onDeathMsg(e)
 end)
@@ -39,14 +43,15 @@ script.on_event(defines.events.on_research_started, function(e)
 end)
 
 script.on_event(defines.events.on_tick, function(e)
-    if(e.tick % 1800 == 0) then -- every 30s
-        for _,player in pairs(game.connected_players) do
-            updatePlayerList(player)
-        end
+  if(e.tick % 1800 == 0) then -- every 30s
+    for _,player in pairs(game.connected_players) do
+        updatePlayerList(player)
+    end
 	end
 	if(e.tick % 600 == 0) then -- every 10s
 		playerChart()
 	end
+	on_tick(e)
 end)
 
 script.on_event(defines.events.on_gui_click, function(e)
