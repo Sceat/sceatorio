@@ -68,16 +68,20 @@ end)
 script.on_nth_tick(60, function(e)
 	if global.tp ~= nil then
 		for _,t in pairs(global.tp) do
-			t.time = t.time-1
-			t.time_chunk = t.time_chunk-1
-			if(t.time_chunk < 1) then
-				spawnAlone(t.player, t.spawn)
-				t.time_chunk = 10
-			end
-			if(t.time < 1 and t.player.connected) then
-				say('teleporting '..(t.player.name)..' to his spawn')
-				t.player.teleport(t.spawn,game.surfaces.nauvis)
+			if(global.tp.player == nil) or (global.tp.player.connected == false) then
 				global.tp[_]=nil
+			else
+				t.time = t.time-1
+				t.time_chunk = t.time_chunk-1
+				if(t.time_chunk < 1) then
+					spawnAlone(t.player, t.spawn)
+					t.time_chunk = 10
+				end
+				if(t.time < 1 and t.player.connected) then
+					say('teleporting '..(t.player.name)..' to his spawn')
+					t.player.teleport(t.spawn,game.surfaces.nauvis)
+					global.tp[_]=nil
+				end
 			end
 		end
 	end
