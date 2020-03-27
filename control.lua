@@ -68,7 +68,7 @@ end)
 script.on_nth_tick(60, function(e)
 	if global.tp ~= nil then
 		for _,t in pairs(global.tp) do
-			if(global.tp.player == nil) or (global.tp.player.connected == false) then
+			if(t.player == nil) or (t.player.connected == false) then
 				global.tp[_]=nil
 			else
 				t.time = t.time-1
