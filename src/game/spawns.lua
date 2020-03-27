@@ -225,16 +225,14 @@ function generatePlayerSpawn(player)
 	if global.tp == nil then
 		global.tp = {}
 	end
-	table.insert(global.tp, {player=player,spawn=spawn,time=300,time_chunk=100})
+	table.insert(global.tp, {player=player,spawn=spawn,time=5,time_chunk=2})
 	player.print('you will be teleported to your spawn in 5s')
 end
 
 function spawnAlone(player, spawn)
 	local surface = player.surface
-
 	local baseArea = getAreaAroundPos(spawn, BASE_SIZE)
 	local safeZoneArea = getAreaAroundPos(spawn, SAFE_ZONE)
-
 	RemoveInCircle(surface, baseArea, "tree", spawn, BASE_SIZE+5)
 	RemoveInCircle(surface, baseArea, "resource", spawn, BASE_SIZE+5)
 	RemoveInCircle(surface, baseArea, "cliff", spawn, BASE_SIZE+5)
@@ -294,24 +292,6 @@ function spawnAlone(player, spawn)
 	CreateWaterStrip(surface, {x=spawn.x+WATER_SPAWN_OFFSET_X, y=spawn.y+WATER_SPAWN_OFFSET_Y+2}, WATER_SPAWN_LENGTH)
 	CreateWaterStrip(surface, {x=spawn.x+WATER_SPAWN_OFFSET_X, y=spawn.y+WATER_SPAWN_OFFSET_Y+3}, WATER_SPAWN_LENGTH)
 	CreateWaterStrip(surface, {x=spawn.x+WATER_SPAWN_OFFSET_X, y=spawn.y+WATER_SPAWN_OFFSET_Y+4}, WATER_SPAWN_LENGTH)
-end
-
-function on_tick(event)
-	if global.tp ~= nil then
-		for _,t in pairs(global.tp) do
-			t.time = t.time-1
-			t.time_chunk = t.time_chunk-1
-			if(t.time_chunk < 1) then
-				spawnAlone(t.player, t.spawn)
-				t.time_chunk = 1000
-			end
-			if(t.time < 1 and t.player.connected) then
-				say('teleporting '..(t.player.name)..' to his spawn')
-				t.player.teleport(t.spawn,game.surfaces.nauvis)
-				global.tp[_]=nil
-			end
-		end
-	end
 end
 
 function onButtonClick(event)

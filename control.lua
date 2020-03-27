@@ -1,6 +1,7 @@
 require("src.game.offlineSecurity")
 require("src.game.chat")
 require("src.game.spawns")
+require("src.game.evo")
 require("src.game.radars")
 require("src.game.playerList")
 
@@ -42,16 +43,44 @@ script.on_event(defines.events.on_research_started, function(e)
 	onSearchStart(e)
 end)
 
-script.on_event(defines.events.on_tick, function(e)
-  if(e.tick % 1800 == 0) then -- every 30s
-    for _,player in pairs(game.connected_players) do
-        updatePlayerList(player)
-    end
+script.on_nth_tick(60*30, function(e)
+	for _,player in pairs(game.connected_players) do
+		updatePlayerList(player)
 	end
-	if(e.tick % 600 == 0) then -- every 10s
-		playerChart()
+end)
+
+script.on_nth_tick(60*10, function(e)
+	playerChart()
+end)
+
+script.on_nth_tick(60*60, function(e)
+	local forces = {}
+	for _,player in pairs(game.connected_players) do
+		if(player.force.name ~= 'lobby') and (player.force.name ~= 'player') then
+			forces[player.force] = true
+		end
 	end
-	on_tick(e)
+	for force in pairs(forces) do
+		evolveTeamEnemies(force)
+	end
+end)
+
+script.on_nth_tick(60, function(e)
+	if global.tp ~= nil then
+		for _,t in pairs(global.tp) do
+			t.time = t.time-1
+			t.time_chunk = t.time_chunk-1
+			if(t.time_chunk < 1) then
+				spawnAlone(t.player, t.spawn)
+				t.time_chunk = 10
+			end
+			if(t.time < 1 and t.player.connected) then
+				say('teleporting '..(t.player.name)..' to his spawn')
+				t.player.teleport(t.spawn,game.surfaces.nauvis)
+				global.tp[_]=nil
+			end
+		end
+	end
 end)
 
 script.on_event(defines.events.on_gui_click, function(e)
