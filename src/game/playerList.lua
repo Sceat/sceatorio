@@ -286,16 +286,22 @@ function CreatePlayerListGui(event)
 	  if(frame) then
 		  local scrollframe = frame['playerList-panel-scroll']
 		  scrollframe.clear()
-		  for _,player in pairs(game.players) do
+          for _,player in pairs(game.players) do
+              local enemy_force = game.forces['enemy='..player.force.name]
+              local difficulty = 'none'
+              if(enemy_force ~= nil) then
+                local diff = enemy_force.evolution_factor * 100
+                difficulty = string.format("%.f", diff > 100 and 100 or diff)
+              end
 			  if(player.connected) then
-				  local caption_str = player.name.." ["..player.force.name.."]".." ("..formattime_hours_mins(player.online_time)..")"
+                  local caption_str = player.name.." ["..player.force.name.."]".." ("..formattime_hours_mins(player.online_time)..") | difficulty "..(difficulty).."%"
 				  if (player.admin) then
 					  AddLabel(scrollframe, player.name.."_plist", caption_str, my_player_list_admin_style)
 				  else
 					  AddLabel(scrollframe, player.name.."_plist", caption_str, my_player_list_style)
 				  end
 			  else
-				  local caption_str = player.name.." ["..player.force.name.."]".." ("..formattime_hours_mins(player.online_time)..")"
+				  local caption_str = player.name.." ["..player.force.name.."]".." ("..formattime_hours_mins(player.online_time)..") | difficulty "..(difficulty).."%"
 				  local text = scrollframe.add{type="label", caption=caption_str.."(offline)", name=player.name.."_plist"}
 				  ApplyStyle(text, my_player_list_offline_style)
 			  end
