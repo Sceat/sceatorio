@@ -2,7 +2,7 @@ require("src.utils.compute")
 require('src.utils.msg')
 
 MIN_SPAWN_DIST = 50
-MAX_SPAWN_DIST = 60
+MAX_SPAWN_DIST = 110
 
 BASE_SIZE = 90
 SAFE_ZONE = 220
@@ -178,7 +178,7 @@ function onChunkGen(e)
 			entity.force = ('enemy='..(nearest.force.name))
 			if(nearest.dist < 220) then
 				entity.destroy()
-			elseif (nearest.dist < 500) and (math.random(10,30) < 18) then
+			elseif (nearest.dist < 500) and (math.random(0,100) <= 70) then
 				entity.destroy()
 			end
 		end
@@ -213,20 +213,35 @@ function createPlayerEnemyForce(player)
 	end
 end
 
+function tablelength(T)
+  local count = 0
+  for _ in pairs(T) do count = count + 1 end
+  return count
+end
+
 function generatePlayerSpawn(player)
-	say((player.name).." just created a new Empire! creating terrain.. (wait a few sec)")
 	local surface = player.surface
-	game.create_force(player.name)
-	player.force = player.name
 	local spawn = FindUngeneratedCoordinates(MIN_SPAWN_DIST,MAX_SPAWN_DIST,surface)
-	createPlayerEnemyForce(player)
-	player.force.set_spawn_position(spawn, surface)
-	surface.request_to_generate_chunks(spawn, 3)
-	if global.tp == nil then
-		global.tp = {}
+	if (spawn.x == 0) then
+		say("there is no more place to create a spawn for "..player.name.." ! join someone or get lost.")
+		return false
+	elseif tablelength(game.forces) > 62 then
+		say("there can't be more than 30 players due to the factorio force amount limitation! "..player.name.." has to join a team")
+		return false
+	else
+		say((player.name).." just created a new Empire! creating terrain.. (wait a few sec)")
+		game.create_force(player.name)
+		player.force = player.name
+		createPlayerEnemyForce(player)
+		player.force.set_spawn_position(spawn, surface)
+		surface.request_to_generate_chunks(spawn, 3)
+		if global.tp == nil then
+			global.tp = {}
+		end
+		table.insert(global.tp, {player=player,spawn=spawn,time=5,time_chunk=2})
+		player.print('you will be teleported to your spawn in 5s')
 	end
-	table.insert(global.tp, {player=player,spawn=spawn,time=5,time_chunk=2})
-	player.print('you will be teleported to your spawn in 5s')
+	return true
 end
 
 function spawnAlone(player, spawn)
@@ -295,12 +310,13 @@ function spawnAlone(player, spawn)
 end
 
 function onButtonClick(event)
-	if not (event and event.element and event.element.valid) then return end
 	local player = game.players[event.element.player_index]
 	local name = event.element.name
 	if (name == "spawn_alone") then
-		player.gui.center.spawn_gui.destroy()
-		generatePlayerSpawn(player)
+		local could_find_a_spawn = generatePlayerSpawn(player)
+		if(could_find_a_spawn) then
+			player.gui.center.spawn_gui.destroy()
+		end
 	else
 		local splitted = {}
 		for k, v in string.gmatch(name, "(%w+)=(%w+)") do

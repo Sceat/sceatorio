@@ -15,14 +15,6 @@ function forwardMsg(e)
     end
 end
 
-function onDeathMsg(e)
-	callOnPlayer(function(p)
-		if(game.players[e.player_index] ~= p) then
-			p.print{"player-died-by",game.players[e.player_index].name, e.cause.localised_name}
-		end
-	end)
-end
-
 function onSearchStart(e)
 	callOnPlayer(function(p)
 		p.print{"player-started-research",e.research.force.name, e.research.localised_name}

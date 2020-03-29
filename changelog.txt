@@ -1,4 +1,15 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.18.39
+Date: 2020.03.29
+  Chat:
+    - Seems we can't access factorio's locale anymore, so the death message are now manual
+  Spawns:
+    - Enhanced the new players spawn distance to allow more players to join
+    - Enhanced biters population handling on player spawns
+    - If no spawn is found or the max force limit is reached it will prevent a player from spawning
+  Player list:
+    - Improved
+---------------------------------------------------------------------------------------------------
 Version: 0.18.37
 Date: 2020.03.27
   Player list:

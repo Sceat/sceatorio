@@ -13,8 +13,29 @@ script.on_event(defines.events.on_chunk_generated, function(e)
 	onChunkGen(e)
 end)
 
+unit_names = {
+	["behemoth-biter"] = "a Gigantic green Biter",
+	["behemoth-spitter"] = "a Gigantic green Spitter",
+	["big-biter"] = "the Great blue Biter",
+	["big-spitter"] = "the Great blue Spitter",
+	["medium-biter"] = "an Average Biter",
+	["medium-spitter"] = "an Average Spitter",
+	["small-biter"] = "a ridiculous insect",
+	["small-spitter"] = "a ridiculous spitting insect"
+}
+
 script.on_event(defines.events.on_player_died, function(e)
-	onDeathMsg(e)
+	local player = game.players[e.player_index]
+	if(e.cause ~= nil) then
+		local unit_name = unit_names[e.cause.name]
+		if(unit_name ~= nil) then
+			say(player.name.." was murdered by "..unit_name)
+		else
+			say(player.name.." has been wiped out from this planet")
+		end
+	else
+		say(player.name.."'s corpse was reduced to atoms.. rip")
+	end
 end)
 
 script.on_event(defines.events.on_player_left_game, function(e)
@@ -22,9 +43,9 @@ script.on_event(defines.events.on_player_left_game, function(e)
 end)
 
 script.on_event(defines.events.on_player_joined_game, function(e)
-	CreatePlayerListGui(e)
 	unProtectPlayer(e)
 	local player = game.players[e.player_index]
+	create_container(player)
 	player.force.chart(player.surface,{{x = -200, y = -200}, {x = 200, y = 200}})
 	if(player.force.name == 'lobby') then
 		showSpawnGui(player)
@@ -43,14 +64,11 @@ script.on_event(defines.events.on_research_started, function(e)
 	onSearchStart(e)
 end)
 
-script.on_nth_tick(60*30, function(e)
-	for _,player in pairs(game.connected_players) do
-		updatePlayerList(player)
-	end
-end)
-
 script.on_nth_tick(60*10, function(e)
 	playerChart()
+	for _,player in pairs(game.connected_players) do
+		tick_player_list(player)
+	end
 end)
 
 script.on_nth_tick(60*60, function(e)
@@ -87,7 +105,11 @@ script.on_nth_tick(60, function(e)
 	end
 end)
 
-script.on_event(defines.events.on_gui_click, function(e)
-	PlayerListGuiClick(e)
-	onButtonClick(e)
+script.on_event(defines.events.on_gui_click, function(event)
+	if not (event and event.element and event.element.valid) then return end
+	if(event.element.name == 'toggle_players') then
+		toggle_player_list(game.players[event.player_index])
+	else
+		onButtonClick(event)
+	end
 end)

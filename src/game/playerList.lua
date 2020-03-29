@@ -1,341 +1,106 @@
+function style_element(element, style)
+	for k,v in pairs(style) do
+		element.style[k]=v
+	end
+end
+
 function formattime_hours_mins(ticks)
-
-	local seconds = ticks / 60
-
-	local minutes = math.floor((seconds)/60)
-
-	local hours   = math.floor((minutes)/60)
-
-	local minutes = math.floor(minutes - 60*hours)
-
-	return string.format("%dh:%02dm", hours, minutes)
-
-  end
-
-  -- Shorter way to add a label with a style
-
-function AddLabel(guiIn, name, message, style)
-
-    guiIn.add{name = name, type = "label",
-
-                    caption=message}
-
-    ApplyStyle(guiIn[name], style)
-
-end
-
-function UpdateLabel(guiIn,name,message,style)
-
-    guiIn[name].caption = message
-
-    -- ApplyStyle(guiIn[name], style)
-end
-
-
-
--- Shorter way to add a spacer
-
-function AddSpacer(guiIn, name)
-
-    guiIn.add{name = name, type = "label",
-
-                    caption=" "}
-
-    ApplyStyle(guiIn[name], my_spacer_style)
-
-end
-
-
-
--- Shorter way to add a spacer with a decorative line
-
-function AddSpacerLine(guiIn, name)
-
-    guiIn.add{name = name, type = "label",
-
-                    caption="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"}
-
-    ApplyStyle(guiIn[name], my_spacer_style)
-
-end
-
---------------------------------------------------------------------------------
--- GUI Label Styles -- by oarc
---------------------------------------------------------------------------------
-
-my_fixed_width_style = {
-
-    minimal_width = 450,
-
-    maximal_width = 450
-
-}
-
-my_label_style = {
-
-    -- minimal_width = 450,
-
-    -- maximal_width = 50,
-
-    single_line = false,
-
-    font_color = {r=1,g=1,b=1},
-
-    top_padding = 0,
-
-    bottom_padding = 0
-
-}
-
-my_note_style = {
-
-    -- minimal_width = 450,
-
-    single_line = false,
-
-    font = "default-small-semibold",
-
-    font_color = {r=1,g=0.5,b=0.5},
-
-    top_padding = 0,
-
-    bottom_padding = 0
-
-}
-
-my_warning_style = {
-
-    -- minimal_width = 450,
-
-    -- maximal_width = 450,
-
-    single_line = false,
-
-    font_color = {r=1,g=0.1,b=0.1},
-
-    top_padding = 0,
-
-    bottom_padding = 0
-
-}
-
-my_spacer_style = {
-
-    minimal_height = 10,
-
-    font_color = {r=0,g=0,b=0},
-
-    top_padding = 0,
-
-    bottom_padding = 0
-
-}
-
-my_small_button_style = {
-
-    font = "default-small-semibold"
-
-}
-
-my_player_list_fixed_width_style = {
-
-    minimal_width = 200,
-
-    maximal_width = 400,
-
-    maximal_height = 200
-
-}
-
-my_player_list_admin_style = {
-
-    font = "default-semibold",
-
-    font_color = {r=1,g=0.5,b=0.5},
-
-    minimal_width = 200,
-
-    top_padding = 0,
-
-    bottom_padding = 0,
-
-    single_line = false,
-
-}
-
-my_player_list_style = {
-
-    font = "default-semibold",
-
-    minimal_width = 200,
-
-    top_padding = 0,
-
-    bottom_padding = 0,
-
-    single_line = false,
-
-}
-
-my_player_list_offline_style = {
-
-    -- font = "default-semibold",
-
-    font_color = {r=0.5,g=0.5,b=0.5},
-
-    minimal_width = 200,
-
-    top_padding = 0,
-
-    bottom_padding = 0,
-
-    single_line = false,
-
-}
-
-my_player_list_style_spacer = {
-
-    minimal_height = 20,
-
-}
-
-my_color_red = {r=1,g=0.1,b=0.1}
-
-
-
-my_longer_label_style = {
-
-    maximal_width = 600,
-
-    single_line = false,
-
-    font_color = {r=1,g=1,b=1},
-
-    top_padding = 0,
-
-    bottom_padding = 0
-
-}
-
-my_longer_warning_style = {
-
-    maximal_width = 600,
-
-    single_line = false,
-
-    font_color = {r=1,g=0.1,b=0.1},
-
-    top_padding = 0,
-
-    bottom_padding = 0
-
-}
-
---------------------------------------------------------------------------------
--- Player List GUI - oarc version made realtime
---------------------------------------------------------------------------------
-
-function ApplyStyle (guiIn, styleIn)
-
-    for k,v in pairs(styleIn) do
-
-        guiIn.style[k]=v
-
-    end
-
-end
-
-function CreatePlayerListGui(event)
-
-	local player = game.players[event.player_index]
-
-	if player.gui.top.playerList == nil then
-
-		player.gui.top.add{name="playerList", type="button", caption="Player List"}
-
+		local seconds = ticks / 60
+		local minutes = math.floor((seconds)/60)
+		local hours   = math.floor((minutes)/60)
+		local minutes = math.floor(minutes - 60*hours)
+		return string.format("%dh:%02dm", hours, minutes)
 	end
 
-  end
+function create_player_list(player)
+	local container = player.gui.top.sceatorio
+	local player_list = container.add{type="flow", name="player_list", direction="vertical"}
+	local online_list = player_list.add{type="frame", name="online_list",direction="vertical"}
+	local offline_list = player_list.add{type="frame", name="offline_list",direction="vertical"}
 
-  local function drawPlayerListGui(player, frame, scrollFrame)
-	  ApplyStyle(scrollFrame, my_player_list_fixed_width_style)
-	  scrollFrame.horizontal_scroll_policy = "never"
-	  for _,player in pairs(game.connected_players) do
-		  local caption_str = player.name.." ["..player.force.name.."]".." ("..formattime_hours_mins(player.online_time)..")"
-		  if (player.admin) then
-			  AddLabel(scrollFrame, player.name.."_plist", caption_str, my_player_list_admin_style)
-		  else
-			  AddLabel(scrollFrame, player.name.."_plist", caption_str, my_player_list_style)
-		  end
-	  end
+	style_element(player_list, {
+		horizontally_stretchable = true,
+	})
 
-	  -- List offline players
-	  for _,player in pairs(game.players) do
-		  if (not player.connected) then
-			  local caption_str = player.name.." ["..player.force.name.."]".." ("..formattime_hours_mins(player.online_time)..")"
-			  local text = scrollFrame.add{type="label", caption=caption_str, name=player.name.."_plist"}
-			  ApplyStyle(text, my_player_list_offline_style)
-		  end
-	  end
-	  local spacer = scrollFrame.add{type="label", caption="     ", name="plist_spacer_plist"}
-	  ApplyStyle(spacer, my_player_list_style_spacer)
-  end
+	style_element(online_list, {
+		horizontally_stretchable = true,
+	})
 
-  function updatePlayerList(player)
-	  local frame = player.gui.left["playerList-panel"]
-	  if(frame) then
-		  local scrollframe = frame['playerList-panel-scroll']
-		  scrollframe.clear()
-          for _,player in pairs(game.players) do
-              local enemy_force = game.forces['enemy='..player.force.name]
-              local difficulty = 'none'
-              if(enemy_force ~= nil) then
-                local diff = enemy_force.evolution_factor * 100
-                difficulty = string.format("%.f", diff > 100 and 100 or diff)
-              end
-			  if(player.connected) then
-                  local caption_str = player.name.." ["..player.force.name.."]".." ("..formattime_hours_mins(player.online_time)..") | difficulty "..(difficulty).."%"
-				  if (player.admin) then
-					  AddLabel(scrollframe, player.name.."_plist", caption_str, my_player_list_admin_style)
-				  else
-					  AddLabel(scrollframe, player.name.."_plist", caption_str, my_player_list_style)
-				  end
-			  else
-				  local caption_str = player.name.." ["..player.force.name.."]".." ("..formattime_hours_mins(player.online_time)..") | difficulty "..(difficulty).."%"
-				  local text = scrollframe.add{type="label", caption=caption_str.."(offline)", name=player.name.."_plist"}
-				  ApplyStyle(text, my_player_list_offline_style)
-			  end
-		  end
-	  end
-  end
+	style_element(offline_list, {
+		horizontally_stretchable = true,
+	})
 
-  local function ExpandPlayerListGui(player)
-	  local frame = player.gui.left["playerList-panel"]
-	  if (frame) then
-		  frame.destroy()
-	  else
-		  local frame = player.gui.left.add{type="frame", name="playerList-panel", caption="Online:"}
-		  local scrollFrame = frame.add{type="scroll-pane", name="playerList-panel-scroll", direction = "vertical"}
-		  drawPlayerListGui(player,frame,scrollFrame)
-	  end
-  end
+	tick_player_list(player)
+end
 
+function create_container(player)
+	local container = player.gui.top.add{name="sceatorio",type="frame", direction="vertical"}
+	local daytime = game.surfaces.nauvis.daytime
+	local server_daytime = container.add{name="day_time",type="flow",direction="horizontal"}
+	local server_daytime_label = server_daytime.add{type="label",caption="Day time: "}
+	local server_daytime_progress = server_daytime.add{name="day_progress",type="progressbar", value=daytime}
 
+	local toggle_list = container.add{name="toggle_players",type="button", caption="Show players"}
 
-  function PlayerListGuiClick(event)
+	style_element(container, {
+		top_margin = 10,
+		padding = 2
+	})
 
-	  if not (event and event.element and event.element.valid) then return end
+	style_element(server_daytime, {
+		padding = 0,
+		vertical_align = "center"
+	})
 
-	  local player = game.players[event.element.player_index]
+	style_element(toggle_list, {
+		padding = 0
+	})
 
-	  local name = event.element.name
+end
 
+function tick_player_list(player)
+	local daytime = game.surfaces.nauvis.daytime
+	local container = player.gui.top.sceatorio
+	-- updating day time progress
+	container.day_time.day_progress.value = daytime
+	local player_list = container.player_list
 
+	if(player_list == nil) then return end
 
-	  if (name == "playerList") then
+	local online_list = player_list.online_list
+	local offline_list = player_list.offline_list
+	online_list.clear()
+	offline_list.clear()
 
-		  ExpandPlayerListGui(player)
+	for _,player in pairs(game.players) do
+		local name = player.name
+		local forcename = player.force.name
+		local enemy_force = game.forces['enemy='..forcename]
+		local difficulty = 'none'
+		local time = formattime_hours_mins(player.online_time)
+		if(enemy_force ~= nil) then
+			local diff = enemy_force.evolution_factor * 100
+			difficulty = string.format("%.f", diff > 100 and 100 or diff)
+		end
+		local capt = "["..forcename.."] "..name.." | Evolution "..difficulty.."% | "..time
+		if(player.connected) then
+			local label = online_list.add{name=(player.name.."_infos"),type="label", caption=capt}
+			style_element(label, {
+				font_color = player.color,
+			})
+		else
+			local label = offline_list.add{name=(player.name.."_infos"),type="label", caption=capt}
+			style_element(label, {
+				font_color = {r=0.5,g=0.5,b=0.5},
+			})
+		end
+	end
+end
 
-      end
-
-  end
+function toggle_player_list(player)
+	if(player.gui.top.sceatorio.player_list == nil) then
+		create_player_list(player)
+	else
+		player.gui.top.sceatorio.player_list.destroy()
+	end
+end
