@@ -42,28 +42,29 @@ function create_container(player)
 	end
 	-- end fix
 
-	local container = player.gui.top.add{name="sceatorio",type="frame", direction="vertical"}
-	local daytime = game.surfaces.nauvis.daytime
-	local server_daytime = container.add{name="day_time",type="flow",direction="horizontal"}
-	local server_daytime_label = server_daytime.add{type="label",caption="Day time: "}
-	local server_daytime_progress = server_daytime.add{name="day_progress",type="progressbar", value=daytime}
+	if(player.gui.top.sceatorio == nil) then
+		local container = player.gui.top.add{name="sceatorio",type="frame", direction="vertical"}
+		local daytime = game.surfaces.nauvis.daytime
+		local server_daytime = container.add{name="day_time",type="flow",direction="horizontal"}
+		local server_daytime_label = server_daytime.add{type="label",caption="Day time: "}
+		local server_daytime_progress = server_daytime.add{name="day_progress",type="progressbar", value=daytime}
 
-	local toggle_list = container.add{name="toggle_players",type="button", caption="Show players"}
+		local toggle_list = container.add{name="toggle_players",type="button", caption="Show players"}
 
-	style_element(container, {
-		top_margin = 10,
-		padding = 2
-	})
+		style_element(container, {
+			top_margin = 10,
+			padding = 2
+		})
 
-	style_element(server_daytime, {
-		padding = 0,
-		vertical_align = "center"
-	})
+		style_element(server_daytime, {
+			padding = 0,
+			vertical_align = "center"
+		})
 
-	style_element(toggle_list, {
-		padding = 0
-	})
-
+		style_element(toggle_list, {
+			padding = 0
+		})
+	end
 end
 
 function tick_player_list(player)
