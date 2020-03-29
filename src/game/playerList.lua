@@ -36,10 +36,10 @@ end
 function create_container(player)
 
 	-- compatibility issue
-	if(player.gui.top.playerList ~= nil) then
-		player.gui.top.playerList.destroy()
-		player.gui.left["playerList-panel"].destroy()
-	end
+	local old_list = player.gui.top.playerList
+	local old_list_pane = player.gui.left["playerList-panel"]
+	if(old_list ~= nil) then old_list.destroy() end
+	if(old_list_pane ~= nil) then old_list_pane.destroy() end
 	-- end fix
 
 	if(player.gui.top.sceatorio == nil) then
@@ -102,8 +102,7 @@ function tick_player_list(player)
 		else
 			local label = offline_list.add{name=(player.name.."_infos"),type="label", caption=capt}
 			style_element(label, {
-				font_color = {r=0.5,g=0.5,b=0.5},
-				font = "default-semibold"
+				font_color = {r=0.5,g=0.5,b=0.5}
 			})
 		end
 	end
