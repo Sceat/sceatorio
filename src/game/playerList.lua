@@ -34,6 +34,14 @@ function create_player_list(player)
 end
 
 function create_container(player)
+
+	-- compatibility issue
+	if(player.gui.top.playerList ~= nil) then
+		player.gui.top.playerList.destroy()
+		player.gui.left["playerList-panel"].destroy()
+	end
+	-- end fix
+
 	local container = player.gui.top.add{name="sceatorio",type="frame", direction="vertical"}
 	local daytime = game.surfaces.nauvis.daytime
 	local server_daytime = container.add{name="day_time",type="flow",direction="horizontal"}
@@ -85,13 +93,16 @@ function tick_player_list(player)
 		local capt = "["..forcename.."] "..name.." | Evolution "..difficulty.."% | "..time
 		if(player.connected) then
 			local label = online_list.add{name=(player.name.."_infos"),type="label", caption=capt}
+			local c = player.color
 			style_element(label, {
-				font_color = player.color,
+				font_color = {r=c.r,g=c.g,b=c.b,a=1},
+				font = "default-semibold"
 			})
 		else
 			local label = offline_list.add{name=(player.name.."_infos"),type="label", caption=capt}
 			style_element(label, {
 				font_color = {r=0.5,g=0.5,b=0.5},
+				font = "default-semibold"
 			})
 		end
 	end

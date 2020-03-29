@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.18.40
+Date: 2020.03.27
+  Player list:
+    - Fix color transparency
+  Chat:
+    - Support player colors
+---------------------------------------------------------------------------------------------------
 Version: 0.18.39
 Date: 2020.03.29
   Chat:
@@ -8,7 +15,7 @@ Date: 2020.03.29
     - Enhanced biters population handling on player spawns
     - If no spawn is found or the max force limit is reached it will prevent a player from spawning
   Player list:
-    - Improved
+    - Gladly Improved
 ---------------------------------------------------------------------------------------------------
 Version: 0.18.37
 Date: 2020.03.27
