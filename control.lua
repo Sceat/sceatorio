@@ -52,6 +52,47 @@ script.on_event(defines.events.on_player_joined_game, function(e)
 	end
 end)
 
+commands.add_command('equalize_all', '', function(e)
+	if not game.players[e.player_index].admin then return end
+	say('equalizing entities')
+	for _,e in pairs(game.surfaces.nauvis.find_entities_filtered{type={"unit","turret","unit-spawner"}}) do
+		local nearest = findNearestForce(e.position)
+		if(nearest.force == nil) then
+			say('no nearest force found for '..e.type..' at position '..e.position.x..','..e.position.y)
+		else
+			say('nearest force is '..nearest.force.name)
+			if e.force.name ~= ('enemy='..nearest.force.name) then
+				say(e.name.." from "..e.force.name.."'s clan is inside enemy="..nearest.force.name.."'s clan territory and has been destroyed")
+				e.destroy()
+			end
+		end
+	end
+end)
+
+
+-- preventing biters from another team from expending to another team territory
+script.on_event(defines.events.on_build_base_arrived, function(e)
+	local positon = nil
+	local force = nil
+	if e.group ~= nil then
+		position = e.group.position
+		force = e.group.force
+	elseif e.unit ~= nil then
+		position = e.unit.position
+		force = e.unit.force
+	else return end
+	local nearest = findNearestForce(position)
+	if(nearest.force == nil) then return end
+	if(force.name ~= ('enemy='..nearest.force.name)) then
+		if(e.unit ~= nil) then e.unit.destroy()
+		else
+			for _,entity in ipairs(e.group) do
+				entity.destroy()
+			end
+		end
+	end
+end)
+
 script.on_event(defines.events.on_player_created, function(e)
 	onCreate(e)
 end)

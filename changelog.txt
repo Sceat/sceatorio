@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.18.43
+Date: 2020.03.30
+  Biters:
+    - Add an admin command /equalize_all to remove biters that went outside their respective territory (only for games started before this version)
+    - Biters no longer expand in another team's territory
+---------------------------------------------------------------------------------------------------
 Version: 0.18.40
 Date: 2020.03.27
   Player list:
