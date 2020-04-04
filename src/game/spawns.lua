@@ -2,7 +2,7 @@ require("src.utils.compute")
 require('src.utils.msg')
 
 MIN_SPAWN_DIST = 50
-MAX_SPAWN_DIST = 110
+MAX_SPAWN_DIST = 100
 
 BASE_SIZE = 90
 SAFE_ZONE = 220
@@ -148,12 +148,12 @@ function distance ( x1, y1, x2, y2 )
   return math.sqrt ( dx * dx + dy * dy )
 end
 
-function findNearestForce(position)
+function findNearestForce(position, ignore)
 	local surface = game.surfaces.nauvis
 	local min_distance = nil
 	local nearest_force = nil
 	for _,force in pairs(game.forces) do
-		if(force.name ~= 'enemy') and (force.name ~= "neutral") and (force.name ~= "lobby") and (force.name ~= "player") then
+		if (force.name ~= ignore) and (force.name ~= 'enemy') and (force.name ~= "neutral") and (force.name ~= "lobby") and (force.name ~= "player") then
 			local f1keys = {}
 			for k, v in string.gmatch(force.name, "(%w+)=(%w+)") do
 				f1keys[k]=v

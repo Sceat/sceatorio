@@ -4,6 +4,7 @@ require("src.game.spawns")
 require("src.game.evo")
 require("src.game.radars")
 require("src.game.playerList")
+require("src.game.admin")
 
 script.on_init(function()
 	onInit()
@@ -52,27 +53,17 @@ script.on_event(defines.events.on_player_joined_game, function(e)
 	end
 end)
 
-commands.add_command('equalize_all', '', function(e)
-	if not game.players[e.player_index].admin then return end
-	say('equalizing entities')
-	for _,e in pairs(game.surfaces.nauvis.find_entities_filtered{type={"unit","turret","unit-spawner"}}) do
-		local nearest = findNearestForce(e.position)
-		if(nearest.force == nil) then
-			say('no nearest force found for '..e.type..' at position '..e.position.x..','..e.position.y)
-		else
-			say('nearest force is '..nearest.force.name)
-			if e.force.name ~= ('enemy='..nearest.force.name) then
-				say(e.name.." from "..e.force.name.."'s clan is inside enemy="..nearest.force.name.."'s clan territory and has been destroyed")
-				e.destroy()
-			end
-		end
-	end
+-- preventing biters from another team from expending to another team territory
+script.on_event(defines.events.on_biter_base_built, function(e)
+	local entity = e.entity
+	if(entity == nil) then return end
+	local nearest = findNearestForce(entity.position)
+	if(nearest.force == nil) then return end
+	if(entity.force.name ~= ('enemy='..nearest.force.name)) then entity.destroy() end
 end)
 
-
--- preventing biters from another team from expending to another team territory
 script.on_event(defines.events.on_build_base_arrived, function(e)
-	local positon = nil
+	local position = nil
 	local force = nil
 	if e.group ~= nil then
 		position = e.group.position
@@ -97,6 +88,11 @@ script.on_event(defines.events.on_player_created, function(e)
 	onCreate(e)
 end)
 
+-- script.on_event(defines.events.on_selected_entity_changed, function(e)
+-- 	if e.last_entity ~= nil then game.surfaces.nauvis.print(e.last_entity.force.name) end
+-- end
+-- )
+
 script.on_event(defines.events.on_console_chat, function(e)
     forwardMsg(e)
 end)
@@ -106,7 +102,7 @@ script.on_event(defines.events.on_research_started, function(e)
 end)
 
 script.on_nth_tick(60*10, function(e)
-	playerChart()
+	chart_radars_and_players()
 	for _,player in pairs(game.connected_players) do
 		tick_player_list(player)
 	end

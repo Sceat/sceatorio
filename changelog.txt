@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.18.44
+Date: 2020.04.04
+  Bugfix:
+    - Biter could still spawn in other teams areas
+  Radars:
+    - forces now see charts from all radars of everyone
+  Admin:
+    - Add a process to delete a player and his spawn
+---------------------------------------------------------------------------------------------------
 Version: 0.18.43
 Date: 2020.03.30
   Biters:

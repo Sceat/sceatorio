@@ -45,7 +45,7 @@ function FindUngeneratedCoordinates(minDistChunks, maxDistChunks, surface)
     local position = {x=0,y=0}
     local chunkPos = {x=0,y=0}
 
-    local maxTries = 500
+    local maxTries = 1000
     local tryCounter = 0
 
     local minDistSqr = minDistChunks^2
@@ -67,7 +67,7 @@ function FindUngeneratedCoordinates(minDistChunks, maxDistChunks, surface)
             -- Keep searching!
 
         -- Check there are no generated chunks in a 10x10 area.
-        elseif IsChunkAreaUngenerated(chunkPos, 6, surface) then
+        elseif IsChunkAreaUngenerated(chunkPos, 10, surface) then
             position.x = (chunkPos.x*CHUNK_SIZE) + (CHUNK_SIZE/2)
             position.y = (chunkPos.y*CHUNK_SIZE) + (CHUNK_SIZE/2)
             break -- SUCCESS
