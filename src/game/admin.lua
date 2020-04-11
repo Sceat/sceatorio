@@ -3,7 +3,7 @@ require("src.game.spawns")
 commands.add_command('equalize_all', '', function(e)
 	if not game.players[e.player_index].admin then return end
 	say('equalizing entities')
-	for _,e in pairs(game.surfaces.nauvis.find_entities_filtered{type={"unit","turret","unit-spawner"}}) do
+	for _,e in pairs(game.surfaces.nauvis.find_entities_filtered{type={"turret","unit-spawner"}}) do
 		local nearest = findNearestForce(e.position)
 		if(nearest.force == nil) then
 			say('no nearest force found for '..e.type..' at position '..e.position.x..','..e.position.y)

@@ -1,8 +1,8 @@
 require("src.utils.compute")
 require('src.utils.msg')
 
-MIN_SPAWN_DIST = 50
-MAX_SPAWN_DIST = 100
+MIN_SPAWN_DIST = 90
+MAX_SPAWN_DIST = 110
 
 BASE_SIZE = 90
 SAFE_ZONE = 220
