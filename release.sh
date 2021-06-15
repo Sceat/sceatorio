@@ -21,8 +21,8 @@ echo "
     "author": "Sceat",
     "contact": "@Sceat_",
     "homepage": "",
-    "factorio_version": "0.18",
-    "dependencies": ["base >= 0.18"],
+    "factorio_version": "1.1.0",
+    "dependencies": ["base >= 1.1.0"],
     "description": "Separated spawn for a vanilla multiplayer experience, play with your friends without worrying for grief or resources stealing while offline"
 }
 EOM

@@ -1,7 +1,7 @@
 # Sceatorio
 A multiplayer pve/pvp factorio mod
 
->  factorio v0.18.5
+>  factorio v1.1.0
 
 ## Use
 
