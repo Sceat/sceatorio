@@ -1,16 +1,16 @@
 require("src.utils.msg")
 
-EVOLUTION_PER_MINUTE = 0.0001
+EVOLUTION_PER_MINUTE = 0.00005
 EVOLUTION_PER_WORM_KILL = 0.001
 EVOLUTION_PER_NEST_KILL = 0.007
 
 function evolveTeamEnemies(force)
   local biter_nest_kill = force.kill_count_statistics.get_flow_count{name="biter-spawner", input="input_counts", precision_index = defines.flow_precision_index.one_minute, count=true}
   local spitter_nest_kill = force.kill_count_statistics.get_flow_count{name="spitter-spawner", input="input_counts", precision_index = defines.flow_precision_index.one_minute, count=true}
-  local behemoth_worm_turret_kill = force.entity_build_count_statistics.get_flow_count{name="behemoth-worm-turret", input="output_counts", precision_index = defines.flow_precision_index.one_minute, count=true}
-  local big_worm_turret_kill = force.entity_build_count_statistics.get_flow_count{name="big-worm-turret", input="output_counts", precision_index = defines.flow_precision_index.one_minute, count=true}
-  local medium_worm_turret_kill = force.entity_build_count_statistics.get_flow_count{name="medium-worm-turret", input="output_counts", precision_index = defines.flow_precision_index.one_minute, count=true}
-  local small_worm_turret_kill = force.entity_build_count_statistics.get_flow_count{name="small-worm-turret", input="output_counts", precision_index = defines.flow_precision_index.one_minute, count=true}
+  local behemoth_worm_turret_kill = force.kill_count_statistics.get_flow_count{name="behemoth-worm-turret", input="output_counts", precision_index = defines.flow_precision_index.one_minute, count=true}
+  local big_worm_turret_kill = force.kill_count_statistics.get_flow_count{name="big-worm-turret", input="output_counts", precision_index = defines.flow_precision_index.one_minute, count=true}
+  local medium_worm_turret_kill = force.kill_count_statistics.get_flow_count{name="medium-worm-turret", input="output_counts", precision_index = defines.flow_precision_index.one_minute, count=true}
+  local small_worm_turret_kill = force.kill_count_statistics.get_flow_count{name="small-worm-turret", input="output_counts", precision_index = defines.flow_precision_index.one_minute, count=true}
 
   local enemy = game.forces[('enemy='..(force.name))]
   local worm_kills = behemoth_worm_turret_kill + big_worm_turret_kill + medium_worm_turret_kill + small_worm_turret_kill
