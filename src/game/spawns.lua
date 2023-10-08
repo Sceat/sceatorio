@@ -96,6 +96,9 @@ function showSpawnGui(player)
 	if(player.gui.center.spawn_gui ~= nil) then
 		player.gui.center.spawn_gui.destroy()
 	end
+
+	say((player.name).." is looking for a place to spawn ")
+
 	local widget = player.gui.center.add({type="frame",direction="vertical",name="spawn_gui"})
 	widget.add({type="label",caption="Welcome young adventurer, your story start here"})
 	widget.add({type="label",caption=" "})
@@ -106,7 +109,7 @@ function showSpawnGui(player)
 	widgetInner.add({type="label",caption="or ask someone to join his Factory"})
 	widgetInner.add({type="label",caption=" "})
 	for _,p in pairs(game.connected_players) do
-		if(p.force.name ~= 'lobby') then
+		if(p.force.name ~= 'lobby' and p.force.name ~= 'player') then
 			widgetInner.add({type="button",name=("joinMate="..(p.name)),caption=("team up with "..(p.name))})
 		end
 	end
@@ -118,8 +121,16 @@ function onCreate(e)
 	player.force = 'lobby'
 	player.teleport(BASE_SPAWN, surface)
 	say((player.name).." just spawned!")
-	showSpawnGui(player)
+
+	-- Initialize the table if it doesn't exist
+	if not global.scheduledGuiShow then
+		global.scheduledGuiShow = {}
+	end
+
+	-- Schedule GUI show for 600 ticks in the future
+	global.scheduledGuiShow[e.player_index] = e.tick + 600
 end
+
 
 function askToJoin(player, playerAsking)
 	local widget = player.gui.center.add({type="frame",direction="vertical",name="askToJoin"})

@@ -49,7 +49,7 @@ script.on_event(defines.events.on_player_joined_game, function(e)
 	create_container(player)
 	player.force.chart(player.surface,{{x = -200, y = -200}, {x = 200, y = 200}})
 	if(player.force.name == 'lobby') then
-		showSpawnGui(player)
+		global.scheduledGuiShow[e.player_index] = e.tick + 600
 	end
 end)
 
@@ -117,6 +117,25 @@ script.on_nth_tick(60*60, function(e)
 	end
 	for force in pairs(forces) do
 		evolveTeamEnemies(force)
+	end
+end)
+
+script.on_nth_tick(61, function(e)
+	-- If no players are scheduled, don't bother checking
+	if not global.scheduledGuiShow then return end
+
+	-- Check each scheduled player to see if it's time to show their GUI
+	for player_index, tick_to_show in pairs(global.scheduledGuiShow) do
+			if e.tick >= tick_to_show then
+					-- Time to show the GUI for this player!
+					local player = game.players[player_index]
+					-- Check if the player is valid before trying to show the GUI
+					if player and player.valid then
+							showSpawnGui(player)
+					end
+					-- Clear the scheduled time regardless of whether the player was valid
+					global.scheduledGuiShow[player_index] = nil
+			end
 	end
 end)
 
