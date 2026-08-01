@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.0.7
+Date: 2026-08-01
+  Changes:
+    - Server operators can now reconcile Sceatorio runtime settings on a loaded save with the new admin/RCON command "/sceatorio-apply-settings <json>", because Factorio only allows the owning mod to write its own settings.
+---------------------------------------------------------------------------------------------------
 Version: 2.0.6
 Date: 2026-08-01
   Bugfixes:
