@@ -69,11 +69,13 @@ local function chart_generated_chunk(surface, position, forces)
   }
   local writes = 0
   for _, force in ipairs(forces) do
-    -- A charted chunk can still be hidden by fog of war. Refresh that live
-    -- view so cross-team player/radar positions keep updating, while avoiding
-    -- duplicate work that Factorio is already processing.
-    if not force.is_chunk_visible(surface, position)
-      and not force.is_chunk_requested_for_charting(surface, position) then
+    -- A charted chunk can still be hidden by fog of war, and `force.chart`
+    -- keeps it visible for only part of one sharing interval. Visibility must
+    -- therefore NOT gate this refresh: skipping a still-visible chunk would
+    -- push the real cadence to every other pass and blank a teammate's marker
+    -- for a whole interval. Only work Factorio is already processing is
+    -- skipped, so a pending request is never duplicated.
+    if not force.is_chunk_requested_for_charting(surface, position) then
       force.chart(surface, area)
       writes = writes + 1
     end

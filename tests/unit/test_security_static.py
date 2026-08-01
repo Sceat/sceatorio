@@ -172,7 +172,7 @@ class SecuritySettingsTests(unittest.TestCase):
         control = source("control.lua")
         self.assertNotIn("Radars.chart(player.force", control)
 
-    def test_each_chart_refresh_is_generated_visible_aware_and_request_bounded(self) -> None:
+    def test_each_chart_refresh_is_generated_aware_and_request_bounded(self) -> None:
         control = source("control.lua")
         radars = source("src/game/radars.lua")
         chart_helper = re.search(
@@ -186,7 +186,10 @@ class SecuritySettingsTests(unittest.TestCase):
             helper.index("surface.is_chunk_generated(position)"),
             helper.index("force.chart(surface, area)"),
         )
-        self.assertIn("force.is_chunk_visible(surface, position)", helper)
+        # Visibility must not gate the refresh: `force.chart` keeps a chunk
+        # visible into the next 600-tick pass, so a visibility guard would halve
+        # the real cadence and blank cross-team markers for a whole interval.
+        self.assertNotIn("is_chunk_visible", helper)
         self.assertIn("force.is_chunk_requested_for_charting(surface, position)", helper)
         self.assertNotIn("force.is_chunk_charted(surface, position)", helper)
         self.assertIn("CHUNK_END_EPSILON", helper)

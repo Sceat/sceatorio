@@ -45,10 +45,13 @@ measurement of active logistic or construction robot performance.
 
 - Every 600 ticks, one bounded pass shares the original 70-tile connected-player
   and 112-tile team-radar footprints. Overlapping source chunks are deduplicated
-  within that pass, currently visible or already-requested destinations are
-  skipped, and every chart refresh is preceded by `surface.is_chunk_generated`.
-  A generated chunk that is permanently charted but currently fogged is
-  re-charted so cross-team player and radar positions remain live.
+  within that pass, destinations Factorio is already charting are skipped, and
+  every chart refresh is preceded by `surface.is_chunk_generated`. Current
+  visibility deliberately does not gate the refresh — `force.chart` keeps a
+  chunk visible into the next pass, so skipping it would halve the cadence to
+  20 seconds and blank a teammate's marker in between. Every pass therefore
+  rewrites the whole shared footprint and cross-team player and radar positions
+  stay live on the 10-second schedule.
 - There is no `on_chunk_charted` feedback handler, canonical union force,
   persistent propagation queue, or full-surface catch-up scan. Chart sharing can
   therefore neither request new terrain nor turn its own writes into a map sweep.

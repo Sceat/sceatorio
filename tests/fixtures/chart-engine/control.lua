@@ -6,10 +6,11 @@ local function fail(reason)
 end
 
 local function count_state(surface, forces)
-  local result = {known = 0, generated = 0, charted = {}, requested = {}}
+  local result = {known = 0, generated = 0, charted = {}, requested = {}, visible = {}}
   for _, force in ipairs(forces) do
     result.charted[force.name] = 0
     result.requested[force.name] = 0
+    result.visible[force.name] = 0
   end
   for chunk in surface.get_chunks() do
     result.known = result.known + 1
@@ -21,6 +22,9 @@ local function count_state(surface, forces)
       end
       if force.is_chunk_requested_for_charting(surface, position) then
         result.requested[force.name] = result.requested[force.name] + 1
+      end
+      if force.is_chunk_visible(surface, position) then
+        result.visible[force.name] = result.visible[force.name] + 1
       end
     end
   end
@@ -35,6 +39,7 @@ local function print_state(label, value)
   for _, name in ipairs(names) do
     fields[#fields + 1] = name .. ".charted=" .. value.charted[name]
     fields[#fields + 1] = name .. ".requested=" .. value.requested[name]
+    fields[#fields + 1] = name .. ".visible=" .. value.visible[name]
   end
   log("SCEATORIO_CHART_ENGINE_COUNTS " .. table.concat(fields, " "))
 end
@@ -200,6 +205,15 @@ script.on_nth_tick(1, function(event)
       fail("first production pass telemetry was not exactly bounded")
     end
     fixture.first_writes = status.chart_writes
+    -- A live server retires a chart request within a few ticks; a headless save
+    -- with no connected client never processes the queue, so drain it by hand.
+    -- Without this the in-flight guard alone would hide the cadence the second
+    -- pass is here to prove.
+    for _, force in ipairs(forces) do
+      force.cancel_charting(surface)
+    end
+    fixture.drained = count_state(surface, forces)
+    print_state("requests-drained", fixture.drained)
     fixture.phase = "wait-second-pass"
     return
   end
@@ -232,12 +246,19 @@ script.on_nth_tick(1, function(event)
     end
 
     local status = remote.call("sceatorio_teams", "chart_status")
+    local second_writes = status.chart_writes - fixture.first_writes
+    -- Cadence, not just bounds: the second pass covers the same source
+    -- footprint and must chart it again. A no-op here is the 20-second bug,
+    -- where a teammate's marker goes dark for a whole interval because the
+    -- refresh only lands on every other pass.
+    if second_writes <= 0 then
+      fail("second production pass refreshed nothing for the same footprint")
+    end
     if status.passes - fixture.status_before.passes ~= 2
       or status.source_radars - fixture.status_before.source_radars ~= 2
       or status.chunks_examined - fixture.status_before.chunks_examined ~= 128
       or status.generated_chunks - fixture.status_before.generated_chunks ~= 128
-      or status.chart_writes < fixture.first_writes
-      or status.chart_writes - fixture.first_writes > 128
+      or second_writes > 128
       or status.remote_rejections ~= 1 then
       fail("repeated production pass telemetry was not exactly bounded")
     end
@@ -251,6 +272,7 @@ script.on_nth_tick(1, function(event)
         .. " passes=" .. status.passes
         .. " requested_per_force_max=64"
         .. " writes=" .. status.chart_writes
+        .. " second_pass_writes=" .. second_writes
     )
     log("SCEATORIO_CHART_ENGINE_PASS")
     fixture.phase = "done"
