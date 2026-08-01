@@ -26,6 +26,7 @@ local MAX_PAIRING_REPLAYS = 64
 local MAX_PAIRING_REPLAY_BYTES = 512 * 1024
 local MAX_INGRESS_PACKETS = 64
 local MAX_INGRESS_PACKETS_PER_TICK = 4
+local MAX_PAIRING_FAILURES_PER_MINUTE = 10
 local PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 local SUPPORTED_CAPABILITIES = AiConstants.CAPABILITY_SET
@@ -37,6 +38,7 @@ local pending_event_wait_count = 0
 local pairing_replays = {}
 local pairing_replay_order = {}
 local pairing_replay_bytes = 0
+local pairing_failures = {window_tick = -1, count = 0}
 
 local function global_value(name, fallback)
   local setting = settings.global[name]
@@ -306,9 +308,6 @@ local function player_pairing_options(player, uplink)
   if not global_value("sceatorio-ai-enabled", false) then
     return nil, "AI assistance is disabled by server policy."
   end
-  if not player_value(player, "sceatorio-ai-assistance-enabled", false) then
-    return nil, "Enable Sceatorio AI assistance in your per-player mod settings first."
-  end
   local team = Teams.get_for_player(player)
   if not team then return nil, "Join or create a Sceatorio team before pairing an Uplink." end
   if not force_technology(player.force, AiConstants.TECHNOLOGY) then
@@ -559,9 +558,6 @@ local function authorize(request)
     if not (player and player.valid) or player.force.index ~= force.index then
       return nil, "PLAYER_SCOPE_MISMATCH", "Paired player is missing or belongs to another force"
     end
-    if not player_value(player, "sceatorio-ai-assistance-enabled", false) then
-      return nil, "PLAYER_NOT_OPTED_IN", "Paired player disabled AI assistance"
-    end
   end
   if not force_technology(force, AiConstants.TECHNOLOGY) then
     return nil, "TECHNOLOGY_REQUIRED", "Force has not researched AI Assistance"
@@ -805,7 +801,26 @@ local function send_pairing_response(port, id, ok, paired_descriptor, code, mess
   end
 end
 
+local function pairing_failure_window()
+  local window = game.tick - (game.tick % TICKS_PER_MINUTE)
+  if pairing_failures.window_tick ~= window then
+    pairing_failures.window_tick = window
+    pairing_failures.count = 0
+  end
+  return pairing_failures
+end
+
+local function pairing_rate_limited()
+  return pairing_failure_window().count >= MAX_PAIRING_FAILURES_PER_MINUTE
+end
+
+local function record_pairing_failure()
+  local window = pairing_failure_window()
+  window.count = window.count + 1
+end
+
 local function complete_pairing_response(port, request, request_bytes, ok, paired_descriptor, code, message)
+  if not ok then record_pairing_failure() end
   local encoded = send_pairing_response(port, request.id, ok, paired_descriptor, code, message)
   if encoded and type(request_bytes) == "string" then
     cache_pairing_replay(request.id, request_bytes, encoded)
@@ -902,6 +917,20 @@ local function handle_pairing_exchange(port, request, request_bytes)
       send_encoded(port, replay)
       return
     end
+  end
+  -- A failed-attempt budget keeps a local flooder from grinding code guesses;
+  -- the rate-limit response is never cached so an identical legitimate retry
+  -- succeeds once the window resets.
+  if pairing_rate_limited() then
+    send_pairing_response(
+      port,
+      request.id,
+      false,
+      nil,
+      "PAIRING_RATE_LIMITED",
+      "Too many failed pairing attempts this game minute; wait and retry"
+    )
+    return
   end
   if request.protocol ~= PROTOCOL or request.kind ~= "pairing.exchange"
     or not valid_uuid(request.id) or not valid_pairing_code(request.code) then
@@ -1134,8 +1163,7 @@ local function wait_context_valid(context)
   end
   if not binding.dev_virtual then
     local player = game.get_player(binding.player_index)
-    if not (player and player.valid and player.force.index == force.index)
-      or not player_value(player, "sceatorio-ai-assistance-enabled", false) then return false end
+    if not (player and player.valid and player.force.index == force.index) then return false end
   elseif not global_value("sceatorio-dev-tools-enabled", false) then
     return false
   end
@@ -1420,13 +1448,7 @@ function Gateway.on_forces_merged(event)
 end
 
 function Gateway.on_setting_changed(event)
-  if event.setting == "sceatorio-ai-assistance-enabled" and event.player_index then
-    local player = game.get_player(event.player_index)
-    if player and player.valid and not player_value(player, event.setting, false) then
-      remove_player_pairing_code(event.player_index)
-      revoke_player_bindings(event.player_index, "player-opted-out")
-    end
-  elseif event.setting == "sceatorio-ai-enabled"
+  if event.setting == "sceatorio-ai-enabled"
     and not global_value("sceatorio-ai-enabled", false) then
     for code in pairs(pending_pairings) do remove_pairing_code(code) end
     for _, binding in pairs(root().bindings) do

@@ -212,13 +212,6 @@ data:extend({
     order = "e[ai]-h[max-page-size]"
   },
   {
-    type = "bool-setting",
-    name = "sceatorio-ai-assistance-enabled",
-    setting_type = "runtime-per-user",
-    default_value = false,
-    order = "e[ai]-i[player-enabled]"
-  },
-  {
     type = "string-setting",
     name = "sceatorio-ai-requested-capabilities",
     setting_type = "runtime-per-user",

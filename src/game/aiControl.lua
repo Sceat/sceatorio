@@ -195,6 +195,9 @@ function AiControl.add_annotation(context, payload)
   if not (context.player and context.player.valid) then
     return nil, "PLAYER_REQUIRED", "Private annotations require a real paired player"
   end
+  if not context.surface then
+    return nil, "SURFACE_REQUIRED", "Annotations require an authorized scoped surface"
+  end
   if type(payload) ~= "table" or type(payload.position) ~= "table"
     or type(payload.position.x) ~= "number" or type(payload.position.y) ~= "number"
     or type(payload.text) ~= "string" or #payload.text < 1 or #payload.text > 200 then

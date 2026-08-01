@@ -28,7 +28,7 @@ Start the dedicated server with a localhost Lua UDP port:
 factorio --enable-lua-udp=34198 --start-server save.zip
 ```
 
-In Factorio, enable the global AI setting, research **AI Assistance**, enable the per-player AI setting, build and power an AI Uplink, and use its GUI to create a short-lived one-time code. Then exchange that code from the trusted server host:
+In Factorio, enable the global AI setting, research **AI Assistance**, build and power an AI Uplink, and use its GUI to create a short-lived one-time code; creating that code is the player's explicit opt-in. Then exchange the code from the trusted server host:
 
 ```sh
 cd mcp

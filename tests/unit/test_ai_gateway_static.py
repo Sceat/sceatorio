@@ -16,12 +16,44 @@ class AiGatewayStaticTests(unittest.TestCase):
         self.assertNotIn('"chemical-science-pack"', data)
         self.assertIn('energy_usage = "500kW"', data)
 
-    def test_settings_are_double_opt_in_and_bounded(self):
+    def test_settings_are_server_gated_and_bounded(self):
         settings = (ROOT / "settings.lua").read_text(encoding="utf-8")
+        gateway = (ROOT / "src/game/aiGateway.lua").read_text(encoding="utf-8")
+        locale = (ROOT / "locale/en/sceatorio.cfg").read_text(encoding="utf-8")
         self.assertIn('name = "sceatorio-ai-enabled"', settings)
-        self.assertIn('name = "sceatorio-ai-assistance-enabled"', settings)
         self.assertIn('setting_type = "runtime-per-user"', settings)
         self.assertIn('name = "sceatorio-ai-requests-per-minute"', settings)
+        # The redundant per-player enable switch was removed in 2.0.5; creating
+        # a pairing code at a powered Uplink is the explicit personal opt-in.
+        self.assertNotIn("sceatorio-ai-assistance-enabled", settings)
+        self.assertNotIn("sceatorio-ai-assistance-enabled", gateway)
+        self.assertNotIn("sceatorio-ai-assistance-enabled", locale)
+
+    def test_entity_resolution_and_annotations_require_a_scoped_surface(self):
+        telemetry = (ROOT / "src/game/aiTelemetry.lua").read_text(encoding="utf-8")
+        control = (ROOT / "src/game/aiControl.lua").read_text(encoding="utf-8")
+        resolver = telemetry[
+            telemetry.index("local function resolve_entity") :
+            telemetry.index("function Telemetry.resolve_entity")
+        ]
+        self.assertLess(
+            resolver.index('"SURFACE_REQUIRED"'),
+            resolver.index('"FORCE_SCOPE_MISMATCH"'),
+        )
+        annotation = control[control.index("function AiControl.add_annotation") :]
+        self.assertIn('"SURFACE_REQUIRED"', annotation)
+
+    def test_failed_pairing_exchanges_are_rate_limited_before_code_consumption(self):
+        gateway = (ROOT / "src/game/aiGateway.lua").read_text(encoding="utf-8")
+        self.assertIn("MAX_PAIRING_FAILURES_PER_MINUTE", gateway)
+        exchange = gateway[
+            gateway.index("local function handle_pairing_exchange") :
+            gateway.index("local function send_success")
+        ]
+        self.assertLess(
+            exchange.index("pairing_rate_limited()"),
+            exchange.index("remove_pairing_code(request.code)"),
+        )
 
     def test_udp_gateway_uses_server_only_2_1_api_and_hard_size_limit(self):
         gateway = (ROOT / "src/game/aiGateway.lua").read_text(encoding="utf-8")

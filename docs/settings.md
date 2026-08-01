@@ -241,14 +241,6 @@ Default: `100`.
 
 Range: `1` to `200`.
 
-## Enable AI assistance for me
-
-`sceatorio-ai-assistance-enabled` · `runtime-per-user` · `bool`
-
-Personal opt-in. The server policy, AI Assistance research, and a powered paired Uplink are still required.
-
-Default: `false`.
-
 ## My requested AI capabilities
 
 `sceatorio-ai-requested-capabilities` · `runtime-per-user` · `string`

@@ -212,6 +212,9 @@ function Telemetry.on_entity_removed(entity)
 end
 
 local function resolve_entity(context, id)
+  if not context.surface then
+    return nil, "SURFACE_REQUIRED", "entity resolution requires an authorized scoped surface"
+  end
   if not valid_string(id, 200) then
     return nil, "INVALID_ENTITY_ID", "entity ID is invalid"
   end
@@ -231,7 +234,7 @@ local function resolve_entity(context, id)
   if entity.force.index ~= context.force.index then
     return nil, "FORCE_SCOPE_MISMATCH", "entity belongs to another force"
   end
-  if context.surface and entity.surface.index ~= context.surface.index then
+  if entity.surface.index ~= context.surface.index then
     return nil, "SURFACE_SCOPE_MISMATCH", "entity belongs to another surface"
   end
   Telemetry.index_entity(entity)
