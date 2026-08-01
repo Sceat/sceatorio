@@ -66,6 +66,19 @@ class ElectricityIsolationTests(unittest.TestCase):
         self.assertIn("register_connector_entity(pole)", security)
         self.assertIn("sanitize_entity_wires(pole)", security)
 
+    def test_child_pole_bound_only_counts_unregistered_poles(self) -> None:
+        security = source("src/game/security.lua")
+        self.assertIn("MAX_LOCAL_POLE_SCAN = 256", security)
+        start = security.index("local function audit_silent_child_poles")
+        end = security.index("function Security.initialize", start + 1)
+        body = security[start:end]
+        self.assertIn("limit = MAX_LOCAL_POLE_SCAN + 1", body)
+        self.assertLess(
+            body.index("registry.slot_by_unit[pole.unit_number]"),
+            body.index("#silent_children > MAX_LOCAL_CHILD_POLES"),
+        )
+        self.assertNotIn("#poles > MAX_LOCAL_CHILD_POLES", body)
+
     def test_local_supply_bound_only_counts_other_teams_entities(self) -> None:
         security = source("src/game/security.lua")
         start = security.index("local function unauthorized_entity_supplied_by_pole")

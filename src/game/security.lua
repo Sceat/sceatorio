@@ -10,6 +10,7 @@ local DEFAULT_MIGRATION_CHUNKS = 2
 local DEFERRED_BUILD_AUDIT_BUDGET = 8
 local MAX_PENDING_BUILD_AUDITS = 4096
 local MAX_LOCAL_CHILD_POLES = 16
+local MAX_LOCAL_POLE_SCAN = 256
 local MAX_LOCAL_SUPPLIED_ENTITIES = 256
 
 -- Chunk iterators are runtime-only LuaObjects. Durable progress is kept as a
@@ -529,32 +530,44 @@ local function audit_silent_child_poles(entity, context)
 
   local origin_networks = network_ids_for(entity)
   if not next(origin_networks) then return end
+  local registry = ensure_security_root().pole_registry
   local poles = entity.surface.find_entities_filtered({
     area = expanded_area(entity, prototypes.max_electric_pole_supply_area_distance + 2),
     type = "electric-pole",
     force = entity.force,
-    limit = MAX_LOCAL_CHILD_POLES + 1
+    limit = MAX_LOCAL_POLE_SCAN + 1
   })
-  if #poles > MAX_LOCAL_CHILD_POLES then
+  if #poles > MAX_LOCAL_POLE_SCAN then
     reject_build(entity, record, nil, context)
     return
   end
 
   -- A composite entity may silently create its own pole after the visible
-  -- player/robot event. Register and disconnect those local poles first, then
-  -- detect a foreign consumer supplied by any pole in the origin's network.
-  local registry = ensure_security_root().pole_registry
-  local silent_child_by_unit = {}
+  -- player/robot event. Only poles the registry has never seen are unannounced
+  -- children: already registered neighbours were sanitized at their own build
+  -- and stay covered by the standing round-robin audit, so counting them toward
+  -- the child bound refunded legitimate builds inside dense own-team pole grids
+  -- (2.0.6 false-positive fix).
+  local silent_children = {}
   for _, pole in ipairs(poles) do
     if pole.unit_number and not registry.slot_by_unit[pole.unit_number] then
-      silent_child_by_unit[pole.unit_number] = true
+      silent_children[#silent_children + 1] = pole
     end
+  end
+  if #silent_children > MAX_LOCAL_CHILD_POLES then
+    reject_build(entity, record, nil, context)
+    return
+  end
+
+  -- Register and disconnect the unannounced poles first, then detect a foreign
+  -- consumer supplied by any of them inside the origin's network.
+  for _, pole in ipairs(silent_children) do
     register_connector_entity(pole)
     sanitize_entity_wires(pole)
   end
   if not entity.valid then return end
   origin_networks = network_ids_for(entity)
-  for _, pole in ipairs(poles) do
+  for _, pole in ipairs(silent_children) do
     local network_id = connector_network_id(pole)
     if network_id and origin_networks[network_id] then
       local _, other_team, saturated = unauthorized_entity_supplied_by_pole(
@@ -565,9 +578,10 @@ local function audit_silent_child_poles(entity, context)
       if other_team then
         -- Removing only the visible parent is insufficient for a composite mod
         -- that leaves a silently created pole alive until its destroy callback.
-        -- Remove the unannounced conflicting child first; never delete the
-        -- foreign team's supplied entity or a previously registered pole.
-        if pole.unit_number and silent_child_by_unit[pole.unit_number] and pole.valid then
+        -- Remove the unannounced conflicting child first; this loop only ever
+        -- walks silent children, so no previously registered pole and no
+        -- foreign team's supplied entity is ever deleted here.
+        if pole.valid then
           pole.destroy({raise_destroy = true})
         end
         reject_build(entity, record, other_team, context)

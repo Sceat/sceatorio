@@ -7,6 +7,10 @@ local DENSE_CLUSTER_CENTER = {x = 300, y = 300}
 local DENSE_CONSUMER_POSITION = {x = 295.5, y = 295.5}
 local DENSE_CLUSTER_RADIUS = 9
 local DENSE_CLUSTER_MIN_ENTITIES = 290
+local POLE_GRID_ORIGIN = {x = 500, y = 500}
+local POLE_GRID_SPAN = 4
+local POLE_GRID_CONSUMER_POSITION = {x = 505.5, y = 505.5}
+local POLE_GRID_MIN_POLES = 20
 local SHARED_CHUNK = {x = 3, y = 3}
 local FAR_UNGENERATED_CHUNK = {x = 10000, y = 10000}
 
@@ -70,6 +74,7 @@ script.on_nth_tick(1, function(event)
     second.set_spawn_position(POLE_B_POSITION, surface)
     surface.request_to_generate_chunks(SILENT_ORIGIN_POSITION, 2)
     surface.request_to_generate_chunks(DENSE_CLUSTER_CENTER, 2)
+    surface.request_to_generate_chunks(POLE_GRID_ORIGIN, 2)
     surface.force_generate_chunk_requests()
     fixture.system_force_name = system.name
     fixture.first_enemy_force_name = first_result.enemy_force_name
@@ -273,6 +278,94 @@ script.on_nth_tick(1, function(event)
     end
     if not (fixture.dense_consumer and fixture.dense_consumer.valid) then
       fail("deferred audit refunded a legitimate build inside a dense single-team area")
+    end
+    fixture.phase = "registered-pole-grid"
+    return
+  end
+
+  -- A normal mid-game own-team pole grid: every pole here went through the mod's
+  -- build path, so all of them are registered. Only poles the registry has never
+  -- seen are unannounced composite children, so a dense registered grid must not
+  -- push the deferred audit over its silent-child bound.
+  if fixture.phase == "registered-pole-grid" then
+    local surface = game.surfaces.nauvis
+    local force = game.forces["security-fixture-a"]
+    local origin = POLE_GRID_ORIGIN
+    local low = -2
+    local high = POLE_GRID_SPAN * 2 + 3
+    local tiles = {}
+    for x = origin.x + low, origin.x + high do
+      for y = origin.y + low, origin.y + high do
+        tiles[#tiles + 1] = {name = "grass-1", position = {x, y}}
+      end
+    end
+    surface.set_tiles(tiles)
+    local area = {
+      {origin.x + low, origin.y + low},
+      {origin.x + high + 1, origin.y + high + 1}
+    }
+    for _, entity in pairs(surface.find_entities_filtered({area = area})) do
+      if entity.valid then entity.destroy() end
+    end
+
+    local consumer_position = POLE_GRID_CONSUMER_POSITION
+    local poles = {}
+    for column = 0, POLE_GRID_SPAN do
+      for row = 0, POLE_GRID_SPAN do
+        local position = {x = origin.x + 2 * column + 0.5, y = origin.y + 2 * row + 0.5}
+        -- Leave the three-by-three machine footprint free.
+        local reserved = math.abs(position.x - consumer_position.x) < 2
+          and math.abs(position.y - consumer_position.y) < 2
+        if not reserved then
+          -- raise_built takes each pole through the mod's normal build path, so
+          -- the security pole registry records it exactly like a player build.
+          local pole = surface.create_entity({
+            name = "small-electric-pole",
+            position = position,
+            force = force,
+            raise_built = true
+          })
+          if not (pole and pole.valid) then
+            fail("could not build the registered own-team pole grid")
+          end
+          poles[#poles + 1] = pole
+        end
+      end
+    end
+    if #poles < POLE_GRID_MIN_POLES then
+      fail("registered own-team pole grid was too small to exceed the child bound")
+    end
+
+    local consumer = surface.create_entity({
+      name = "assembling-machine-1",
+      position = consumer_position,
+      force = force,
+      raise_built = true
+    })
+    if not (consumer and consumer.valid) then
+      fail("could not build the consumer inside the registered pole grid")
+    end
+    -- Without power the deferred audit returns before its bound, so an unpowered
+    -- consumer would make this case pass vacuously.
+    if not consumer.electric_network_id then
+      fail("registered-grid consumer was not supplied by the surrounding poles")
+    end
+    fixture.grid_poles = poles
+    fixture.grid_consumer = consumer
+    fixture.grid_verify_tick = event.tick + 8
+    fixture.phase = "verify-registered-pole-grid"
+    return
+  end
+
+  if fixture.phase == "verify-registered-pole-grid"
+    and event.tick >= fixture.grid_verify_tick then
+    for _, pole in pairs(fixture.grid_poles) do
+      if not (pole and pole.valid) then
+        fail("deferred audit refunded a registered own-team pole inside a dense pole grid")
+      end
+    end
+    if not (fixture.grid_consumer and fixture.grid_consumer.valid) then
+      fail("deferred audit refunded a legitimate build inside a dense registered pole grid")
     end
     fixture.phase = "connect"
     return
