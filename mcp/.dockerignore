@@ -1,0 +1,13 @@
+# The image is built from source only: `npm ci` restores dependencies and `tsc` produces dist,
+# so shipping a host-built node_modules or dist would make the build non-reproducible as well as
+# slow. Everything below is either regenerated inside the image or has no business in a build.
+node_modules
+dist
+*.log
+.env
+.env.*
+.git
+.gitignore
+.dockerignore
+Dockerfile
+README.md
