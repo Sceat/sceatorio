@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.0.6
+Date: 2026-08-01
+  Bugfixes:
+    - The local electricity audit no longer counts already-registered own-team poles toward the silent-child bound, which refunded legitimate builds inside dense pole grids.
+    - Downgraded big and behemoth worms to their smallest variant and thinned nests deterministically in the ring between the spawn safe zone and warning zone, so distance-based generation no longer leaves behemoths beside new team spawns.
+---------------------------------------------------------------------------------------------------
 Version: 2.0.5
 Date: 2026-08-01
   Bugfixes:
