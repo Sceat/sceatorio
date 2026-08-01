@@ -21,6 +21,8 @@ from typing import NoReturn
 PORTAL_ORIGIN = "https://mods.factorio.com"
 INIT_UPLOAD_URL = f"{PORTAL_ORIGIN}/api/v2/mods/releases/init_upload"
 USER_AGENT = "Sceatorio-release/1 (+https://github.com/Sceat/sceatorio)"
+PUBLIC_VERIFY_ATTEMPTS = 25
+PUBLIC_VERIFY_MAX_DELAY_SECONDS = 15
 
 
 def fail(message: str) -> NoReturn:
@@ -67,7 +69,14 @@ def archive_identity(path: Path) -> tuple[str, str, str]:
 
 
 def public_release(name: str, version: str) -> dict | None:
-    url = f"{PORTAL_ORIGIN}/api/mods/{urllib.parse.quote(name, safe='')}/full"
+    # The public endpoint is cached for up to 15 minutes. A distinct, ignored
+    # query value makes every verification read reach a current cache key while
+    # still exercising the exact public API used by clients.
+    query = urllib.parse.urlencode({"verify_release": secrets.token_hex(16)})
+    url = (
+        f"{PORTAL_ORIGIN}/api/mods/{urllib.parse.quote(name, safe='')}/full"
+        f"?{query}"
+    )
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     details = request_json(request)
     matches = [release for release in details.get("releases", []) if release.get("version") == version]
@@ -121,15 +130,26 @@ def upload(path: Path, name: str, api_key: str) -> None:
         fail(f"upload was not acknowledged: {json.dumps(result, sort_keys=True)}")
 
 
-def wait_for_release(name: str, version: str, sha1: str) -> None:
-    for attempt in range(1, 13):
+def public_verify_delay(attempt: int) -> int:
+    return min(attempt * 2, PUBLIC_VERIFY_MAX_DELAY_SECONDS)
+
+
+def wait_for_release(
+    name: str,
+    version: str,
+    sha1: str,
+    *,
+    attempts: int = PUBLIC_VERIFY_ATTEMPTS,
+) -> None:
+    for attempt in range(1, attempts + 1):
         release = public_release(name, version)
         if release:
             if release.get("sha1") != sha1:
                 fail(f"portal release {version} exists with a different SHA-1")
             print(f"portal upload: verified {name} {version} ({sha1})")
             return
-        time.sleep(min(attempt * 2, 15))
+        if attempt < attempts:
+            time.sleep(public_verify_delay(attempt))
     fail("upload succeeded but the release did not appear in the public API")
 
 
