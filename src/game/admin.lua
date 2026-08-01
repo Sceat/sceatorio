@@ -4,10 +4,22 @@ local Message = require("src.utils.msg")
 
 local Admin = {}
 
+local SETTING_PREFIX = "sceatorio-"
+local MAX_SETTING_KEYS = 100
+
 local function command_player(event)
   if not event.player_index then return nil, true end
   local player = game.players[event.player_index]
   return player, player and player.admin
+end
+
+local function reply(event, text)
+  if event.player_index then
+    local player = game.players[event.player_index]
+    if player and player.valid then player.print(text) end
+  else
+    rcon.print(text)
+  end
 end
 
 local function delete_chunks_in_range(surface, center, range)
@@ -104,10 +116,75 @@ local function eradicate(event)
   end
 end
 
+local function apply_settings(event)
+  local _, allowed = command_player(event)
+  if not allowed then
+    reply(event, "SCEATORIO_SETTINGS_ERROR=Administrator permission is required.")
+    return
+  end
+
+  local parsed, desired = pcall(helpers.json_to_table, event.parameter or "")
+  if not (parsed and type(desired) == "table") then
+    reply(event, "SCEATORIO_SETTINGS_ERROR=Expected one JSON object of setting names to values.")
+    return
+  end
+
+  local names = {}
+  local rejected = {}
+  local keys = 0
+  for name in pairs(desired) do
+    keys = keys + 1
+    if type(name) == "string" then
+      names[#names + 1] = name
+    else
+      rejected[#rejected + 1] = "SCEATORIO_SETTINGS_REJECTED name=" .. tostring(name) .. " reason=name_is_not_a_string"
+    end
+  end
+  if keys == 0 or keys > MAX_SETTING_KEYS then
+    reply(event, "SCEATORIO_SETTINGS_ERROR=Expected between 1 and " .. MAX_SETTING_KEYS .. " setting names.")
+    return
+  end
+  table.sort(names)
+
+  local changed = 0
+  local unchanged = 0
+  for _, name in ipairs(names) do
+    local value = desired[name]
+    local setting = settings.global[name]
+    local reason
+    if name:sub(1, #SETTING_PREFIX) ~= SETTING_PREFIX then
+      reason = "name_is_not_a_sceatorio_setting"
+    elseif not setting then
+      reason = "setting_does_not_exist"
+    elseif type(value) ~= type(setting.value) then
+      reason = "expected_" .. type(setting.value) .. "_got_" .. type(value)
+    end
+
+    if reason then
+      rejected[#rejected + 1] = "SCEATORIO_SETTINGS_REJECTED name=" .. name .. " reason=" .. reason
+    elseif setting.value == value then
+      unchanged = unchanged + 1
+    else
+      settings.global[name] = {value = value}
+      changed = changed + 1
+    end
+  end
+
+  table.sort(rejected)
+  reply(event, "SCEATORIO_SETTINGS_APPLIED changed=" .. changed .. " unchanged=" .. unchanged .. " rejected=" .. #rejected)
+  for _, line in ipairs(rejected) do reply(event, line) end
+end
+
 commands.add_command("equalize_all", "Remove enemy structures assigned outside their team territory.", equalize_all)
 commands.add_command("eradicate", "Remove a player and, if empty, their isolated team spawn.", eradicate)
+commands.add_command(
+  "sceatorio-apply-settings",
+  "Reconcile Sceatorio runtime-global settings from one JSON object (admin or RCON only).",
+  apply_settings
+)
 
 Admin.equalize_all = equalize_all
 Admin.eradicate = eradicate
+Admin.apply_settings = apply_settings
 
 return Admin

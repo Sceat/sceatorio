@@ -225,5 +225,37 @@ class SecuritySettingsTests(unittest.TestCase):
         self.assertIn("generated-only chart sharing", matrix)
 
 
+class RuntimeSettingsReconcileTests(unittest.TestCase):
+    def test_settings_reconcile_is_gated_and_fails_closed_per_key(self) -> None:
+        admin = source("src/game/admin.lua")
+        self.assertIn('commands.add_command(\n  "sceatorio-apply-settings"', admin)
+
+        gate = admin[
+            admin.index("local function command_player") : admin.index("local function reply")
+        ]
+        self.assertIn("if not event.player_index then return nil, true end", gate)
+        self.assertIn("player and player.admin", gate)
+
+        handler = admin[admin.index("local function apply_settings") :]
+        self.assertLess(
+            handler.index("if not allowed then"),
+            handler.index("settings.global[name] = {value = value}"),
+        )
+        self.assertIn("pcall(helpers.json_to_table, event.parameter", handler)
+        self.assertIn('type(desired) == "table"', handler)
+        self.assertIn("keys == 0 or keys > MAX_SETTING_KEYS", handler)
+        self.assertIn("table.sort(names)", handler)
+        self.assertIn("name:sub(1, #SETTING_PREFIX) ~= SETTING_PREFIX", handler)
+        self.assertIn("elseif not setting then", handler)
+        self.assertIn("type(value) ~= type(setting.value)", handler)
+        self.assertIn("elseif setting.value == value then", handler)
+        self.assertIn("SCEATORIO_SETTINGS_APPLIED changed=", handler)
+        self.assertIn("SCEATORIO_SETTINGS_REJECTED name=", handler)
+
+        self.assertIn('SETTING_PREFIX = "sceatorio-"', admin)
+        self.assertIn("MAX_SETTING_KEYS = 100", admin)
+        self.assertNotIn("settings.global[name].value =", admin)
+
+
 if __name__ == "__main__":
     unittest.main()
