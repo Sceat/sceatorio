@@ -123,29 +123,33 @@ local function apply_settings(event)
     return
   end
 
+  -- helpers.json_to_table returns nil for malformed or empty input instead of
+  -- raising, so the type check below is what makes a bad payload fail loudly.
+  -- A JSON object always decodes to string keys; anything else is not an object.
   local parsed, desired = pcall(helpers.json_to_table, event.parameter or "")
-  if not (parsed and type(desired) == "table") then
+  local names = {}
+  if parsed and type(desired) == "table" then
+    for name in pairs(desired) do
+      if type(name) ~= "string" then
+        names = nil
+        break
+      end
+      names[#names + 1] = name
+    end
+  else
+    names = nil
+  end
+  if not names then
     reply(event, "SCEATORIO_SETTINGS_ERROR=Expected one JSON object of setting names to values.")
     return
   end
-
-  local names = {}
-  local rejected = {}
-  local keys = 0
-  for name in pairs(desired) do
-    keys = keys + 1
-    if type(name) == "string" then
-      names[#names + 1] = name
-    else
-      rejected[#rejected + 1] = "SCEATORIO_SETTINGS_REJECTED name=" .. tostring(name) .. " reason=name_is_not_a_string"
-    end
-  end
-  if keys == 0 or keys > MAX_SETTING_KEYS then
+  if #names == 0 or #names > MAX_SETTING_KEYS then
     reply(event, "SCEATORIO_SETTINGS_ERROR=Expected between 1 and " .. MAX_SETTING_KEYS .. " setting names.")
     return
   end
   table.sort(names)
 
+  local rejected = {}
   local changed = 0
   local unchanged = 0
   for _, name in ipairs(names) do
@@ -166,11 +170,19 @@ local function apply_settings(event)
       unchanged = unchanged + 1
     else
       settings.global[name] = {value = value}
-      changed = changed + 1
+      -- Factorio silently coerces out-of-domain values (a fractional number
+      -- written to an integer setting is truncated), which would make a
+      -- reconciler report "changed" on every pass forever. Report instead.
+      local stored = settings.global[name].value
+      if stored == value then
+        changed = changed + 1
+      else
+        rejected[#rejected + 1] = "SCEATORIO_SETTINGS_REJECTED name=" .. name
+          .. " reason=value_was_coerced_to_" .. tostring(stored)
+      end
     end
   end
 
-  table.sort(rejected)
   reply(event, "SCEATORIO_SETTINGS_APPLIED changed=" .. changed .. " unchanged=" .. unchanged .. " rejected=" .. #rejected)
   for _, line in ipairs(rejected) do reply(event, line) end
 end

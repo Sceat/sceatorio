@@ -243,12 +243,30 @@ class RuntimeSettingsReconcileTests(unittest.TestCase):
         )
         self.assertIn("pcall(helpers.json_to_table, event.parameter", handler)
         self.assertIn('type(desired) == "table"', handler)
-        self.assertIn("keys == 0 or keys > MAX_SETTING_KEYS", handler)
+        self.assertIn('if type(name) ~= "string" then', handler)
+        self.assertIn("#names == 0 or #names > MAX_SETTING_KEYS", handler)
         self.assertIn("table.sort(names)", handler)
+
+        # A payload that never becomes a settings map must fail loudly with an
+        # error marker and never reach the success marker, so a reconciler that
+        # gates on SCEATORIO_SETTINGS_APPLIED retries instead of reporting success.
+        self.assertEqual(handler.count("SCEATORIO_SETTINGS_ERROR="), 3)
+        for guard in (
+            "if not names then",
+            "#names == 0 or #names > MAX_SETTING_KEYS",
+        ):
+            self.assertLess(
+                handler.index(guard),
+                handler.index("SCEATORIO_SETTINGS_APPLIED changed="),
+            )
         self.assertIn("name:sub(1, #SETTING_PREFIX) ~= SETTING_PREFIX", handler)
         self.assertIn("elseif not setting then", handler)
         self.assertIn("type(value) ~= type(setting.value)", handler)
         self.assertIn("elseif setting.value == value then", handler)
+        # The engine coerces out-of-domain values; an unverified write would
+        # report "changed" on every reconcile pass and never converge.
+        self.assertIn("local stored = settings.global[name].value", handler)
+        self.assertIn("reason=value_was_coerced_to_", handler)
         self.assertIn("SCEATORIO_SETTINGS_APPLIED changed=", handler)
         self.assertIn("SCEATORIO_SETTINGS_REJECTED name=", handler)
 
