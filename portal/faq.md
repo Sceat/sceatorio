@@ -12,7 +12,7 @@ Normal save/load is supported, but offline entity registration targets fresh 2.0
 
 ## Do separate teams share the explored map?
 
-Yes. Radar and chart discovery is shared globally among all registered Sceatorio human teams, without merging their forces, economies, evolution, or electric networks. Synchronization is driven by newly charted chunks rather than recurring full-radar scans; lobby, enemy, and system forces are excluded. Chunk updates are deduplicated behind a fixed queue. If an exceptional burst fills it, Sceatorio warns players and performs bounded background reconciliation from the saved force charts instead of discarding exploration.
+Yes. Every 10 seconds, Sceatorio shares the already-generated chunks near connected team characters and team-owned radars with all registered human teams, without merging forces, economies, evolution, or electric networks. It uses the original scenario's compact 70-tile player and 112-tile radar footprints. Lobby, enemy, and system forces are excluded. It never scans an entire surface, reacts to its own chart writes, or asks Factorio to generate a chunk merely to reveal it.
 
 ## Can teams share power intentionally?
 

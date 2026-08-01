@@ -43,15 +43,13 @@ measurement of active logistic or construction robot performance.
 
 ### Radar and player-HUD performance invariants
 
-- Incremental chart propagation deduplicates by surface and chunk and drains at
-  32 chunks per tick. The sorted human-team force list is built once for that
-  entire tick batch, not once per queued chunk.
-- The pending chart queue is capped at 4,096 chunks. An overflow is visible in
-  player/server warnings and `sceatorio_teams.chart_status`; it coalesces to one
-  versioned recovery record per surface. Recovery examines at most 16 generated
-  chunks per tick when the normal queue is below its low-water mark and rebuilds
-  missing union entries from Factorio's persistent force charts. An overflow
-  during a pass causes one more pass, so it does not silently lose discovery.
+- Every 600 ticks, one bounded pass shares the original 70-tile connected-player
+  and 112-tile team-radar footprints. Overlapping source chunks are deduplicated
+  within that pass, already-charted destinations are skipped, and every chart
+  write is preceded by `surface.is_chunk_generated`.
+- There is no `on_chunk_charted` feedback handler, canonical union force,
+  persistent propagation queue, or full-surface catch-up scan. Chart sharing can
+  therefore neither request new terrain nor turn its own writes into a map sweep.
 - The compact top-left player HUD caches sorted online/offline player indexes.
   Join/leave/force/surface events rerender only bounded visible pages rather
   than rescanning and drawing all historical players for every viewer. Online

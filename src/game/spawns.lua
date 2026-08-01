@@ -3,7 +3,6 @@ local Teams = require("src.game.teams")
 local Compute = require("src.utils.compute")
 local Message = require("src.utils.msg")
 local PlanetSpawns = require("src.game.planetSpawns")
-local Radars = require("src.game.radars")
 local SurfacePolicy = require("src.game.surfacePolicy")
 
 local Spawns = {}
@@ -408,6 +407,10 @@ end
 
 local function generate_player_spawn(player, tick)
   if not is_in_lobby(player) then return false end
+  if State.get().pending_teleports[player.index] then
+    player.print({"sceatorio.spawn-preparing"})
+    return true
+  end
   if not Teams.can_create() then
     player.print({"sceatorio.force-limit"})
     return false
@@ -433,12 +436,9 @@ local function generate_player_spawn(player, tick)
     player.print(reason)
     return false
   end
-  Radars.synchronize_team_charts(Teams.get_force(record))
   local team_force = Teams.get_force(record)
   team_force.set_spawn_position(spawn, surface)
   Teams.ensure_surface(record, surface, spawn)
-  mark_force_transition(player, team_force, tick)
-  player.force = team_force
   surface.request_to_generate_chunks(spawn, CONFIG.spawn_generation_radius_chunks)
 
   State.get().pending_teleports[player.index] = {
@@ -491,7 +491,7 @@ end
 function Spawns.on_player_joined(event)
   local player = game.players[event.player_index]
   if not (player and player.valid) then return end
-  if is_in_lobby(player) then
+  if is_in_lobby(player) and not State.get().pending_teleports[player.index] then
     schedule_spawn_gui(player.index, event.tick)
   end
 end
@@ -515,7 +515,8 @@ function Spawns.tick(event)
   for player_index, show_tick in pairs(root.scheduled_gui) do
     if event.tick >= show_tick then
       local player = game.players[player_index]
-      if player and player.valid and player.connected then
+      if player and player.valid and player.connected
+        and not root.pending_teleports[player_index] then
         Spawns.show_spawn_gui(player)
       end
       root.scheduled_gui[player_index] = nil
@@ -547,7 +548,12 @@ function Spawns.tick(event)
         prepared_this_tick = true
       end
       if pending.terrain_ready and event.tick >= pending.due_tick and player.connected then
-        if player.teleport(pending.spawn, surface) then
+        local team_force = Teams.get_force(record)
+        if not (team_force and team_force.valid) then
+          root.pending_teleports[player_index] = nil
+        elseif player.teleport(pending.spawn, surface) then
+          mark_force_transition(player, team_force, event.tick)
+          player.force = team_force
           player.print({"sceatorio.teleported"})
           root.pending_teleports[player_index] = nil
         else

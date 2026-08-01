@@ -12,7 +12,7 @@ Sceatorio is a friendly Factorio multiplayer scenario mod for people who want on
 - Per-team, per-surface enemy evolution driven by connected time, that team's own worm/spawner kills, and new pollution actually consumed by unit spawners on the surface.
 - One stable separated spawn after a team's first physical arrival on each real Space Age planet; platforms and remote view are excluded.
 - Electricity isolation with bounded background auditing, exact player refunds, and mutual owner opt-in for deliberate sharing.
-- Global radar/chart discovery shared among all Sceatorio human teams without merging their forces, economies, evolution, or electric networks. Chunk updates are deduplicated behind a fixed queue; an exceptional overflow is announced and reconciled from the saved force charts in bounded background passes.
+- Connected-player and team-radar discovery is shared among all Sceatorio human teams without merging their forces, economies, evolution, or electric networks. The original 70-tile player and 112-tile radar footprints are polled every 10 seconds, and only chunks that Factorio has already generated can be revealed.
 - Configurable per-team robot policy that aggregates all fixed networks/surfaces and favors belts with default caps of 500 logistic and 5,000 construction robots. Enforcement pauses only crafting machines currently producing the capped robot class; it never moves, deletes, or hides robot items.
 - Optional, default-off AI Assistance through one automation-science technology, a powered Uplink, per-player opt-in, one-time pairing/revocation, and 24 scope-checked MCP tools.
 - Shared chat/research notices, death messages, and a compact top-left player list with accurate online/offline counts and independently paged access to every player's total playtime.
@@ -51,8 +51,9 @@ The script refuses to overwrite the same version unless `--replace` is supplied.
 Other mods that intentionally reveal one chunk for a registered Sceatorio team
 should call `remote.call("sceatorio_radars", "share_chunk", force_name,
 surface_name_or_index, {x = chunk_x, y = chunk_y})`. The wrapper accepts only
-one bounded integer chunk and routes it through shared discovery; direct
-`LuaForce.chart` calls do not raise `on_chunk_charted` in Factorio 2.1.12.
+one bounded integer chunk that is already generated and charted by the source
+team, then copies it to the other teams. Direct `LuaForce.chart` calls do not
+raise `on_chunk_charted` in Factorio 2.1.12.
 
 ## AI/MCP status
 

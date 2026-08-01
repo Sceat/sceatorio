@@ -18,12 +18,8 @@ require("src.game.admin")
 remote.add_interface("sceatorio_teams", {
   register_force = function(force_name, owner_player_index, display_name)
     local force = type(force_name) == "string" and game.forces[force_name] or nil
-    local already_registered = force and Teams.get_by_force(force) ~= nil
     local record, reason = Teams.register_force(force, owner_player_index, display_name)
     if not record then return {ok = false, error = reason} end
-    if not already_registered then
-      Radars.synchronize_team_charts(Teams.get_force(record))
-    end
     return {
       ok = true,
       id = record.id,
@@ -174,16 +170,17 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
   TestMenu.on_setting_changed(event)
   AiGateway.on_setting_changed(event)
 end)
-script.on_event(defines.events.on_surface_created, Security.on_surface_created)
+script.on_event(defines.events.on_surface_created, function(event)
+  Teams.on_surface_created(event)
+  Security.on_surface_created(event)
+end)
 script.on_event(defines.events.on_force_created, Teams.on_force_created)
-script.on_event(defines.events.on_chunk_charted, Radars.on_chunk_charted)
 script.on_event(defines.events.on_surface_deleted, function(event)
   Security.on_surface_deleted(event)
   PlanetSpawns.on_surface_deleted(event)
   RobotPolicy.on_surface_deleted(event)
   OfflineSecurity.on_surface_deleted(event)
   Spawns.on_surface_deleted(event)
-  Radars.on_surface_deleted(event)
   Teams.on_surface_deleted(event)
   AiGateway.on_surface_deleted(event)
 end)
@@ -275,12 +272,11 @@ script.on_event(defines.events.on_tick, function(event)
   Security.on_tick(event)
   OfflineSecurity.on_tick(event)
   RobotPolicy.on_tick(event)
-  Radars.tick(event)
   AiGateway.poll(event)
 end)
 
 script.on_nth_tick(10 * 60, function(event)
-  Radars.track_connected_players(event)
+  Radars.share_discoveries(event)
   PlayerList.tick(event)
 end)
 

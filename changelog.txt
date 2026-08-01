@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.0.3
+Date: 2026-08-01
+  Bugfixes:
+    - Restored the original bounded 10-second sharing model for connected player and team-radar positions, without a global chart-event union or whole-surface catch-up.
+    - Prevented map sharing from requesting ungenerated chunks or repeatedly requesting chunks that Factorio is already charting.
+    - Delayed new-team force assignment until after the player reaches the prepared distant spawn, preventing vanilla vision from charting the lobby origin for that team.
+    - Cancelled stale pending chart work during migration and guarded reconnects and repeated spawn actions while a distant spawn is being prepared.
+  Testing:
+    - Added an exact Factorio 2.1.12 regression fixture proving two radar-sharing passes generate no terrain and issue no repeated chart writes.
+---------------------------------------------------------------------------------------------------
 Version: 2.0.2
 Date: 2026-08-01
   Bugfixes:

@@ -382,7 +382,11 @@ def validate_portal(validation: Validation, info: dict) -> None:
     combined = description + "\n" + faq
     validation.require("Offline protection activates immediately" in combined, "immediate offline-protection behavior must be prominent")
     validation.require("There is no grace timer" in combined, "offline-protection copy must explicitly reject a grace timer")
-    validation.require("Radar and chart discovery is shared globally among all registered Sceatorio human teams" in combined, "registered-team global chart sharing must be prominent")
+    validation.require(
+        "Connected players and team radars share their nearby, already-generated map discovery"
+        in combined,
+        "bounded registered-team chart sharing must be prominent",
+    )
     validation.require("no retrofit guarantee" in combined, "fresh-world offline-registration limitation must be prominent")
     validation.require(
         "unrelated entities created without any Factorio lifecycle event remain a trusted-mod boundary"

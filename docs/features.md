@@ -12,7 +12,7 @@ This is the concise public contract. The implementation and tests referenced in 
 - **Space Age planets:** After a team's first physical arrival, one stable separated spawn is generated asynchronously on each real planet while native terrain and progression stay intact.
 - **Electricity isolation:** Direct cross-team copper links are removed, conflicting player/robot placements are rejected and refunded, script-raised conflicts fail closed after their creator resumes, and sharing requires mutual team-owner opt-in.
 - **Immediate offline preservation:** When the last human leaves a team, tracked team-owned entities immediately become unbreakable; the first teammate back restores each exact prior destructible state.
-- **Shared radar discovery:** A chunk charted by one Sceatorio human team is copied to every other Sceatorio human team without merging forces, economies, evolution, or electric networks.
+- **Shared radar discovery:** Every 10 seconds, already-generated chunks around connected team characters and team-owned radars are shared with every registered human team without merging forces, economies, evolution, or electric networks.
 - **Robot policy:** Per-team logistic and construction caps aggregate every fixed network and surface; policy can be disabled, warning-only, or enforced by pausing only registered crafting machines whose current recipe produces a capped robot class, while preserving each machine's prior script-disabled state.
 - **Optional AI Assistance:** AI Assistance is off by default and ships as one automation-science technology, a powered Uplink, per-player opt-in, one-time pairing and revocation, and exactly 24 scope-checked MCP tools.
 

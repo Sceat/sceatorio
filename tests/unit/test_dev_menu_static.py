@@ -80,7 +80,7 @@ class DevMenuTests(unittest.TestCase):
         self.assertIn("player.force.research_all_technologies(false)", gui)
         self.assertNotIn("research_all_technologies", remote)
 
-    def test_chart_fixture_hook_is_dev_gated_and_uses_production_queue(self) -> None:
+    def test_chart_fixture_hook_is_dev_gated_and_uses_safe_wrapper(self) -> None:
         menu = source("src/game/testMenu.lua")
         hook = menu[menu.index("share_chart_chunk"):menu.index("reserve_planet_spawn")]
         self.assertIn("if not enabled()", hook)

@@ -25,7 +25,7 @@ Do not remove the legacy images until all replacements pass the checklist below;
 ## Eight-shot target set
 
 1. Create-team screen plus a second client's owner-approved join request.
-2. Map view showing several genuinely separated Nauvis spawns and the same globally shared chart discovery on two registered human teams.
+2. Map view showing several genuinely separated Nauvis spawns and the same bounded connected-player/radar discovery on two registered human teams.
 3. Two team evolution displays proving different values on the same surface.
 4. A rejected/refunded cross-team electric placement with both networks visible.
 5. First physical Space Age planet arrival followed by the team's stable spawn notification.

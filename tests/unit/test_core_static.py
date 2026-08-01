@@ -21,7 +21,7 @@ class MetadataTests(unittest.TestCase):
         info = json.loads(source("info.json"))
         matrix = json.loads(source("tests/headless/matrix.json"))
         target = matrix["factorio"]["version"]
-        self.assertEqual(info["version"], "2.0.2")
+        self.assertEqual(info["version"], "2.0.3")
         self.assertEqual(info["factorio_version"], ".".join(target.split(".")[:2]))
         self.assertIn(f"base >= {target}", info["dependencies"])
         self.assertIn(f"? space-age >= {target}", info["dependencies"])
@@ -140,6 +140,26 @@ class TeamAndJoinTests(unittest.TestCase):
         self.assertIn('remote.add_interface("sceatorio_teams"', control)
         self.assertIn("is_legacy_player_force", teams)
 
+    def test_new_team_forces_cancel_factorio_origin_chart_requests(self) -> None:
+        teams = source("src/game/teams.lua")
+        helper = re.search(
+            r"local function reset_new_force_charting\(force\)(.*?)\nend",
+            teams,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(helper)
+        self.assertIn("force.cancel_charting(surface)", helper.group(1))
+        self.assertNotIn("force.clear_chart(surface)", helper.group(1))
+        create = teams[
+            teams.index("function Teams.create") : teams.index("function Teams.get(")
+        ]
+        self.assertIn("reset_new_force_charting(team_force)", create)
+        self.assertIn("reset_new_force_charting(enemy_force)", create)
+        self.assertLess(
+            create.index("reset_new_force_charting(team_force)"),
+            create.index("make_record("),
+        )
+
     def test_enemy_isolation_does_not_write_human_team_relations(self) -> None:
         teams = source("src/game/teams.lua")
         self.assertIn("configure_enemy_matrix", teams)
@@ -240,6 +260,37 @@ class TeamAndJoinTests(unittest.TestCase):
         self.assertIsNotNone(tick)
         self.assertIn("requested_chunks_ready", tick.group(1))
         self.assertNotIn("force_generate_chunk_requests", tick.group(1))
+
+    def test_new_team_force_is_assigned_only_after_spawn_teleport(self) -> None:
+        spawns = source("src/game/spawns.lua")
+        create = spawns[
+            spawns.index("local function generate_player_spawn") : spawns.index(
+                "function Spawns.on_gui_click"
+            )
+        ]
+        self.assertNotIn("player.force = team_force", create)
+        self.assertIn("State.get().pending_teleports[player.index]", create)
+        tick = re.search(
+            r"function Spawns\.tick\(event\)(.*?)\nend\n\nfunction Spawns\.on_chunk_generated",
+            spawns,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(tick)
+        body = tick.group(1)
+        self.assertIn("local team_force = Teams.get_force(record)", body)
+        self.assertIn("mark_force_transition(player, team_force, event.tick)", body)
+        self.assertIn("player.force = team_force", body)
+        self.assertLess(
+            body.index("player.teleport(pending.spawn, surface)"),
+            body.index("player.force = team_force"),
+        )
+        joined = spawns[
+            spawns.index("function Spawns.on_player_joined") : spawns.index(
+                "local function requested_chunks_ready"
+            )
+        ]
+        self.assertIn("pending_teleports[player.index]", joined)
+        self.assertIn("not root.pending_teleports[player_index]", body)
 
 
 class EvolutionTests(unittest.TestCase):

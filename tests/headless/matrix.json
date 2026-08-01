@@ -162,7 +162,16 @@
       "status": "implemented",
       "fixture": "security",
       "pass_marker": "SCEATORIO_SECURITY_PASS",
-      "requirement": "Internal-looking system forces remain unregistered; explicit teams keep isolated enemy pairs through a force merge; chart-copy reconciliation stays non-recursive; a saturated chart queue completes a mid-pass versioned catch-up without exceeding fixed capacity; the runtime audit removes a manual cross-team copper connection; and the bounded next-tick audit rejects a visible parent plus its unannounced same-force child pole when that pole supplies another team's consumer without invalidating the parent inside its raised-build callback."
+      "requirement": "Internal-looking system forces remain unregistered; explicit teams keep isolated enemy pairs through a force merge; generated-only chart sharing rejects ungenerated and source-uncharted chunks; the runtime audit removes a manual cross-team copper connection; and the bounded next-tick audit rejects a visible parent plus its unannounced same-force child pole when that pole supplies another team's consumer without invalidating the parent inside its raised-build callback."
+    },
+    {
+      "id": "map.chart-engine-no-generation",
+      "profile": "base",
+      "runner": "fixture",
+      "status": "implemented",
+      "fixture": "chart-engine",
+      "pass_marker": "SCEATORIO_CHART_ENGINE_PASS",
+      "requirement": "The exact Factorio 2.1.12 runtime proves an ungenerated remote chunk is rejected without terrain generation, while a real registered-team radar shares only its bounded already-generated neighborhood on the 600-tick production schedule."
     },
     {
       "id": "security.offline-invulnerability-roundtrip",

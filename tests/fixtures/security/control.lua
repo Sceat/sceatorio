@@ -3,9 +3,8 @@ local POLE_B_POSITION = {x = 116, y = 100}
 local SILENT_FOREIGN_CONSUMER_POSITION = {x = 142, y = 120}
 local SILENT_CHILD_POLE_POSITION = {x = 146, y = 120}
 local SILENT_ORIGIN_POSITION = {x = 150, y = 120}
-local CHART_AREA = {{x = 0, y = 0}, {x = 32, y = 32}}
-local CHART_QUEUE_CAPACITY = 4096
-local RECOVERY_CHUNK = {x = 3, y = 3}
+local SHARED_CHUNK = {x = 3, y = 3}
+local FAR_UNGENERATED_CHUNK = {x = 10000, y = 10000}
 
 local function fail(reason)
   error("SCEATORIO_SECURITY_FAIL: " .. reason)
@@ -154,11 +153,6 @@ script.on_nth_tick(1, function(event)
     fixture.silent_foreign_consumer = foreign_consumer
     fixture.silent_origin = origin
     fixture.silent_child = silent_child
-    -- LuaForce.chart and powered radars on playerless forces do not raise
-    -- on_chunk_charted in 2.1.12. This still executes production copy_chart
-    -- reconciliation for a newly registered team without exposing a remote
-    -- map-reveal test hook. Incremental fanout needs a connected client test.
-    first_force.chart(surface, CHART_AREA)
     local third = game.create_force("security-fixture-c")
     local result = remote.call(
       "sceatorio_teams",
@@ -167,12 +161,11 @@ script.on_nth_tick(1, function(event)
       nil,
       "Security fixture C"
     )
-    if not result.ok then fail("new team registration/chart union failed") end
+    if not result.ok then fail("new team registration failed") end
     fixture.third_enemy_force_name = result.enemy_force_name
     local status = remote.call("sceatorio_teams", "chart_status")
-    if status.queue_depth ~= 0 or status.total_enqueued ~= 0
-      or status.total_propagated ~= 0 then
-      fail("chart-copy reconciliation recursively entered incremental fanout")
+    if status.mode ~= "bounded-entity-scan" then
+      fail("bounded chart-sharing mode was not active")
     end
     fixture.silent_child_reject_tick = event.tick + 3
     fixture.phase = "verify-silent-child-reject"
@@ -286,123 +279,44 @@ script.on_nth_tick(1, function(event)
     end
 
     local surface = game.surfaces.nauvis
-    if not surface.is_chunk_generated(RECOVERY_CHUNK) then
-      fail("radar recovery target chunk was not generated")
+    if not surface.is_chunk_generated(SHARED_CHUNK) then
+      fail("shared chart target chunk was not generated")
     end
-    if third_force.is_chunk_charted(surface, RECOVERY_CHUNK) then
-      fail("radar recovery target was already shared before the stress case")
-    end
-    for index = 1, CHART_QUEUE_CAPACITY do
-      local result = remote.call(
-        "sceatorio_radars",
-        "share_chunk",
-        destination.name,
-        surface.name,
-        {x = 10000 + index, y = 10000}
-      )
-      if not result.ok or result.queued ~= 1 then
-        fail("could not fill the bounded radar queue")
-      end
-    end
-    local deferred = remote.call(
+    destination.clear_chart(surface)
+    third_force.clear_chart(surface)
+
+    local uncharted = remote.call(
       "sceatorio_radars",
       "share_chunk",
       destination.name,
       surface.name,
-      RECOVERY_CHUNK
+      SHARED_CHUNK
     )
-    if not deferred.ok or deferred.queued ~= 0 then
-      fail("radar overflow target was not deferred")
+    if uncharted.ok or uncharted.error ~= "source team has not charted this chunk" then
+      fail("source team has not charted check did not fail closed")
     end
-    local radar = remote.call("sceatorio_teams", "chart_status")
-    if radar.queue_capacity ~= CHART_QUEUE_CAPACITY
-      or radar.queue_depth ~= CHART_QUEUE_CAPACITY
-      or radar.max_queue_depth > radar.queue_capacity
-      or radar.total_deferred < 1
-      or radar.catchup_surface_count ~= 1
-      or not radar.backpressure_active then
-      fail("radar queue did not enter bounded backpressure")
-    end
-    fixture.drain_deadline = event.tick + 900
-    fixture.phase = "wait-for-version-catchup"
-    return
-  end
 
-  if fixture.phase == "wait-for-version-catchup" then
-    local status = remote.call("sceatorio_teams", "chart_status")
-    if event.tick >= fixture.drain_deadline then
-      fail("chart catch-up never exposed a generated uncharted chunk")
+    if surface.is_chunk_generated(FAR_UNGENERATED_CHUNK) then
+      fail("far chart fixture chunk was unexpectedly generated")
     end
-    local surface = game.surfaces.nauvis
-    local destination = game.forces["security-fixture-b"]
-    local third_force = game.forces["security-fixture-c"]
-    local canonical = game.forces["sceatorio-chart-union"]
-    local position = status.last_catchup_chunk
-    if status.total_catchup_scanned > 0
-      and status.catchup_surface_count == 1
-      and status.last_catchup_surface_index == surface.index
-      and position
-      and not destination.is_chunk_charted(surface, position)
-      and not third_force.is_chunk_charted(surface, position)
-      and not canonical.is_chunk_charted(surface, position) then
-      local missing = CHART_QUEUE_CAPACITY - status.queue_depth
-      for index = 1, missing do
-        local result = remote.call(
-          "sceatorio_radars",
-          "share_chunk",
-          destination.name,
-          surface.name,
-          {x = 20000 + index, y = 20000}
-        )
-        if not result.ok or result.queued ~= 1 then
-          fail("could not refill the radar queue during catch-up")
-        end
-      end
-      local deferred = remote.call(
-        "sceatorio_radars",
-        "share_chunk",
-        destination.name,
-        surface.name,
-        position
-      )
-      if not deferred.ok or deferred.queued ~= 0 then
-        fail("mid-pass radar discovery was not deferred")
-      end
-      local after = remote.call("sceatorio_teams", "chart_status")
-      if after.queue_depth ~= CHART_QUEUE_CAPACITY
-        or after.total_deferred <= status.total_deferred then
-        fail("mid-pass overflow did not version the catch-up job")
-      end
-      fixture.restart_before = status.total_catchup_restarts
-      fixture.phase = "wait-for-chart-drain"
+    local ungenerated = remote.call(
+      "sceatorio_radars",
+      "share_chunk",
+      destination.name,
+      surface.name,
+      FAR_UNGENERATED_CHUNK
+    )
+    if ungenerated.ok or ungenerated.error ~= "chunk is not generated" then
+      fail("chunk is not generated check did not fail closed")
     end
-    return
-  end
+    if surface.is_chunk_generated(FAR_UNGENERATED_CHUNK) then
+      fail("rejected chart request generated terrain")
+    end
 
-  if fixture.phase == "wait-for-chart-drain" then
-    local status = remote.call("sceatorio_teams", "chart_status")
-    local drained = status.queue_depth == 0 and status.pending_count == 0
-      and status.suppression_count == 0 and status.catchup_surface_count == 0
-      and not status.backpressure_active
-    if not drained then
-      if event.tick >= fixture.drain_deadline then
-        fail("chart propagation did not drain")
-      end
-      return
-    end
-    if status.suppression_generations ~= 2 then
-      fail("chart recursion guards are not limited to two tick generations")
-    end
-    if status.max_queue_depth > status.queue_capacity
-      or status.total_deferred < 1
-      or status.total_catchup_passes < 1
-      or status.total_catchup_restarts <= fixture.restart_before
-      or status.total_backpressure_recoveries < 1 then
-      fail("chart backpressure telemetry did not report bounded recovery")
-    end
     log(
-      "SCEATORIO_SECURITY_PASS: force isolation, chart sync, force merge, and wire audit passed"
+      "SCEATORIO_SECURITY_PASS: force isolation, generated-only chart rejection, force merge, and wire audit passed"
     )
     fixture.phase = "passed"
+    return
   end
 end)

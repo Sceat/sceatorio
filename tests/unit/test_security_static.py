@@ -94,10 +94,10 @@ class ElectricityIsolationTests(unittest.TestCase):
 
 
 class SecuritySettingsTests(unittest.TestCase):
-    def test_chart_wrapper_normalizes_both_map_position_forms(self) -> None:
+    def test_remote_chunk_wrapper_normalizes_both_position_forms(self) -> None:
         radars = source("src/game/radars.lua")
         normalizer = re.search(
-            r"local function normalize_map_position\(position\)(.*?)\nend",
+            r"local function normalize_chunk_position\(position\)(.*?)\nend",
             radars,
             re.DOTALL,
         )
@@ -107,9 +107,8 @@ class SecuritySettingsTests(unittest.TestCase):
         self.assertIn("position[1]", body)
         self.assertIn("position.y", body)
         self.assertIn("position[2]", body)
-        self.assertGreaterEqual(radars.count("normalize_chart_area("), 3)
-        self.assertIn("{x * 32, y * 32}", radars)
-        self.assertIn("{(x + 1) * 32, (y + 1) * 32}", radars)
+        self.assertIn("surface.is_chunk_generated(position)", radars)
+        self.assertIn("force.is_chunk_charted(surface, position)", radars)
 
     def test_settings_are_runtime_global_and_localized(self) -> None:
         settings = source("settings.lua")
@@ -125,92 +124,77 @@ class SecuritySettingsTests(unittest.TestCase):
             self.assertIn(name, locale)
         self.assertGreaterEqual(settings.count('setting_type = "runtime-global"'), 10)
 
-    def test_team_charting_is_global_event_driven_and_entity_scan_free(self) -> None:
+    def test_team_charting_uses_only_bounded_physical_sources(self) -> None:
         radars = source("src/game/radars.lua")
         control = source("control.lua")
-        self.assertIn("on_chunk_charted", control)
-        self.assertIn("Radars.on_chunk_charted", control)
-        self.assertIn("Radars.tick", control)
-        self.assertIn("copy_chart", radars)
-        self.assertIn('CHART_UNION_FORCE_NAME = "sceatorio-chart-union"', radars)
-        self.assertIn("destination_force.copy_chart(canonical", radars)
-        self.assertIn("already_registered", control)
-        self.assertIn("if not already_registered", control)
-        self.assertIn("canonical.chart(surface, entry.area)", radars)
-        self.assertNotIn("accumulator.copy_chart", radars)
-        self.assertIn("CHUNKS_PER_TICK", radars)
-        self.assertIn("SUPPRESSION_GENERATIONS = 2", radars)
-        self.assertIn("suppression_current", radars)
-        self.assertIn("suppression_previous", radars)
-        self.assertNotIn("SUPPRESSION_LIFETIME", radars)
-        self.assertNotIn("suppression_expiry[#", radars)
-        self.assertIn("suppression_count", radars)
-        self.assertNotIn("chart_area", control)
-        self.assertNotIn("sceatorio-cross-team-map-sharing", radars)
-        self.assertNotIn("share_chart", radars)
-        self.assertNotIn("find_entities_filtered", radars)
+        self.assertNotIn("on_chunk_charted", control)
+        self.assertNotIn("Radars.tick", control)
+        self.assertNotIn("copy_chart", radars)
+        self.assertNotIn("chart-union", radars)
+        self.assertNotIn("canonical", radars)
+        self.assertNotIn("catchup", radars)
+        self.assertNotIn("surface.get_chunks", radars)
+        self.assertIn("PLAYER_RADIUS_TILES = 70", radars)
+        self.assertIn("RADAR_RADIUS_TILES = 112", radars)
+        self.assertIn("game.connected_players", radars)
+        self.assertIn('find_entities_filtered({type = "radar"})', radars)
+        self.assertIn("Teams.get_by_force(radar.force)", radars)
+        self.assertIn("Radars.share_discoveries(event)", control)
 
     def test_joining_does_not_script_chart_ungenerated_terrain(self) -> None:
         control = source("control.lua")
         self.assertNotIn("Radars.chart(player.force", control)
 
-    def test_live_players_only_share_a_bounded_generated_neighborhood(self) -> None:
+    def test_each_chart_write_is_guarded_by_chunk_generation(self) -> None:
         control = source("control.lua")
         radars = source("src/game/radars.lua")
-        self.assertIn("LIVE_PLAYER_CHUNK_RADIUS = 2", radars)
-        start = radars.index("function Radars.track_connected_players")
-        end = radars.index("function Radars.on_surface_deleted")
-        tracker = radars[start:end]
-        self.assertIn("game.connected_players", tracker)
-        self.assertIn("player.character", tracker)
-        self.assertIn("character.surface", tracker)
-        self.assertIn("surface.is_chunk_generated(position)", tracker)
-        self.assertIn("force.is_chunk_charted(surface, position)", tracker)
-        self.assertIn("enqueue(sync", tracker)
-        self.assertNotIn(".chart(", tracker)
-        self.assertNotIn("request_to_generate_chunks", tracker)
-        self.assertIn("Radars.track_connected_players(event)", control)
-
-    def test_team_chart_queue_has_coalesced_backpressure_and_bounded_recovery(self) -> None:
-        radars = source("src/game/radars.lua")
-        control = source("control.lua")
-        self.assertIn("MAX_PENDING_CHUNKS", radars)
-        self.assertIn("CATCHUP_CHUNKS_PER_TICK = 16", radars)
-        self.assertIn("catchup_by_surface", radars)
-        self.assertIn("mark_surface_for_catchup", radars)
-        self.assertIn("surface.get_chunks()", radars)
-        self.assertIn("job.version", radars)
-        self.assertIn("if job.version == runtime.version then", radars)
-        self.assertIn("total_catchup_restarts", radars)
-        self.assertIn("total_deferred", radars)
-        self.assertIn("max_queue_depth", radars)
-        self.assertIn("backpressure_active", radars)
-        self.assertIn("queue_capacity = MAX_PENDING_CHUNKS", radars)
-        self.assertIn("catchup_surface_count", radars)
-        self.assertNotIn("for _, force in ipairs(valid_team_forces())", radars)
-        self.assertIn("propagate(sync, entry, forces, canonical)", radars)
-        self.assertIn(
-            "if queue_depth(sync) == 0 and not next(sync.catchup_by_surface) then",
+        chart_helper = re.search(
+            r"local function chart_generated_chunk\(.*?\nend",
             radars,
+            re.DOTALL,
         )
+        self.assertIsNotNone(chart_helper)
+        helper = chart_helper.group(0)
+        self.assertLess(
+            helper.index("surface.is_chunk_generated(position)"),
+            helper.index("force.chart(surface, area)"),
+        )
+        self.assertIn("force.is_chunk_charted(surface, position)", helper)
+        self.assertIn("force.is_chunk_requested_for_charting(surface, position)", helper)
+        self.assertIn("CHUNK_END_EPSILON", helper)
+        self.assertEqual(radars.count("force.chart("), 1)
+        self.assertNotIn("request_to_generate_chunks", radars)
+        self.assertNotIn("force_generate_chunk_requests", radars)
+        self.assertNotIn("Radars.chart(player.force", control)
+
+    def test_remote_sharing_cannot_reveal_undiscovered_chunks(self) -> None:
+        radars = source("src/game/radars.lua")
+        control = source("control.lua")
         self.assertIn('remote.add_interface("sceatorio_radars"', control)
         self.assertIn("Radars.share_chunk", control)
         self.assertIn('x ~= math.floor(x)', radars)
-        self.assertNotIn("script.raise_event", radars)
+        remote_start = radars.index("function Radars.share_chunk")
+        remote_end = radars.index("function Radars.status")
+        remote = radars[remote_start:remote_end]
+        self.assertLess(
+            remote.index("surface.is_chunk_generated(position)"),
+            remote.index("chart_generated_chunk("),
+        )
+        self.assertLess(
+            remote.index("force.is_chunk_charted(surface, position)"),
+            remote.index("chart_generated_chunk("),
+        )
+        self.assertNotIn("surface.get_chunks", remote)
 
-    def test_security_fixture_saturates_and_recovers_the_real_chart_queue(self) -> None:
+    def test_security_fixture_exercises_generated_only_chart_sharing(self) -> None:
         fixture = source("tests/fixtures/security/control.lua")
         matrix = source("tests/headless/matrix.json")
-        self.assertIn("CHART_QUEUE_CAPACITY = 4096", fixture)
-        self.assertIn("for index = 1, CHART_QUEUE_CAPACITY do", fixture)
         self.assertIn('"sceatorio_radars"', fixture)
         self.assertIn('"share_chunk"', fixture)
-        self.assertIn("radar.queue_depth ~= CHART_QUEUE_CAPACITY", fixture)
-        self.assertIn("status.total_catchup_passes < 1", fixture)
-        self.assertIn("status.total_catchup_restarts <= fixture.restart_before", fixture)
-        self.assertIn("status.total_backpressure_recoveries < 1", fixture)
-        self.assertIn("third_force.is_chunk_charted(surface, RECOVERY_CHUNK)", fixture)
-        self.assertIn("saturated chart queue", matrix)
+        self.assertIn("chunk is not generated", fixture)
+        self.assertIn("source team has not charted", fixture)
+        self.assertIn("source team has not charted check did not fail closed", fixture)
+        self.assertIn("generated-only chart sharing", matrix)
 
 
 if __name__ == "__main__":

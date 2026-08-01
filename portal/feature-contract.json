@@ -57,11 +57,12 @@
     {
       "id": "shared-chart-discovery",
       "label": "Shared radar discovery",
-      "statement": "A chunk charted by one Sceatorio human team is copied to every other Sceatorio human team without merging forces, economies, evolution, or electric networks.",
-      "portal_phrase": "Radar and chart discovery is shared globally among all registered Sceatorio human teams, without merging their forces, economies, evolution, or electric networks.",
+      "statement": "Every 10 seconds, already-generated chunks around connected team characters and team-owned radars are shared with every registered human team without merging forces, economies, evolution, or electric networks.",
+      "portal_phrase": "Connected players and team radars share their nearby, already-generated map discovery with every registered human team, without merging forces, economies, evolution, or electric networks.",
       "evidence": [
-        {"path": "src/game/radars.lua", "contains": "copy_chart"},
-        {"path": "control.lua", "contains": "on_chunk_charted"}
+        {"path": "src/game/radars.lua", "contains": "PLAYER_RADIUS_TILES = 70"},
+        {"path": "src/game/radars.lua", "contains": "surface.is_chunk_generated(position)"},
+        {"path": "control.lua", "contains": "Radars.share_discoveries(event)"}
       ]
     },
     {

@@ -6,8 +6,7 @@ local RESERVED_FORCES = {
   enemy = true,
   neutral = true,
   player = true,
-  lobby = true,
-  ["sceatorio-chart-union"] = true
+  lobby = true
 }
 
 local LEGACY_ENEMY_PREFIX = "enemy="
@@ -35,6 +34,18 @@ local function get_force(index, name)
     return force
   end
   return nil
+end
+
+-- Keep mod-created forces free of pending chart work before their real spawn
+-- exists. A fresh Factorio 2.1 force is already uncharted, so clearing it would
+-- only touch unnecessary chart metadata.
+local function reset_new_force_charting(force)
+  if not (force and force.valid) then return end
+  for _, surface in pairs(game.surfaces) do
+    if surface.valid then
+      force.cancel_charting(surface)
+    end
+  end
 end
 
 local function lowest_valid_player(force, excluded_player_index)
@@ -176,6 +187,8 @@ function Teams.create(player, display_name)
   local id = reserve_record_id()
   local team_force = game.create_force("sceatorio-team-" .. id)
   local enemy_force = game.create_force("sceatorio-enemy-" .. id)
+  reset_new_force_charting(team_force)
+  reset_new_force_charting(enemy_force)
   enemy_force.ai_controllable = true
 
   local record = make_record(
@@ -369,6 +382,7 @@ function Teams.register_force(force, owner_player_index, display_name)
   if not enemy_force then
     local enemy_name = "sceatorio-enemy-" .. id
     enemy_force = game.create_force(enemy_name)
+    reset_new_force_charting(enemy_force)
   end
   enemy_force.ai_controllable = true
 
@@ -442,6 +456,37 @@ function Teams.initialize()
       if reason then
         log("[Sceatorio] Could not migrate team force " .. force.name .. ": " .. reason)
       end
+    end
+  end
+end
+
+-- Configuration changes may load a save made by a release that left engine
+-- chart work queued. Cancel only pending work here; completed discoveries are
+-- deliberately preserved.
+function Teams.cancel_pending_charting()
+  for _, record in pairs(State.get().teams_by_id) do
+    local team_force = Teams.get_force(record)
+    local enemy_force = Teams.get_enemy_force(record)
+    for _, surface in pairs(game.surfaces) do
+      if surface.valid then
+        if team_force and team_force.valid then team_force.cancel_charting(surface) end
+        if enemy_force and enemy_force.valid then enemy_force.cancel_charting(surface) end
+      end
+    end
+  end
+end
+
+function Teams.on_surface_created(event)
+  local surface = event and game.surfaces[event.surface_index] or nil
+  if not (surface and surface.valid) then return end
+  for _, record in pairs(State.get().teams_by_id) do
+    local team_force = Teams.get_force(record)
+    local enemy_force = Teams.get_enemy_force(record)
+    if team_force and team_force.valid then
+      team_force.cancel_charting(surface)
+    end
+    if enemy_force and enemy_force.valid then
+      enemy_force.cancel_charting(surface)
     end
   end
 end
@@ -551,7 +596,10 @@ local function replace_enemy_force(root, record)
       suffix = suffix + 1
     until not enemy_force
   end
-  enemy_force = enemy_force or game.create_force(name)
+  if not enemy_force then
+    enemy_force = game.create_force(name)
+    reset_new_force_charting(enemy_force)
+  end
   enemy_force.ai_controllable = true
   record.enemy_force_index = enemy_force.index
   record.enemy_force_name = enemy_force.name

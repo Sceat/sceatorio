@@ -6,7 +6,7 @@ Sceatorio is a friendly multiplayer scenario mode for groups that want the same 
 - Enemy evolution is tracked per team and per surface from connected time, own worm/spawner kills, and new pollution consumed by nests on that surface.
 - With Space Age enabled, each team receives one stable separated spawn after physically reaching a new planet; platforms and remote view are excluded.
 - Electric networks are isolated by default; deliberate sharing requires both team owners to opt in.
-- Radar and chart discovery is shared globally among all registered Sceatorio human teams, without merging their forces, economies, evolution, or electric networks.
+- Connected players and team radars share their nearby, already-generated map discovery with every registered human team, without merging forces, economies, evolution, or electric networks.
 - The compact top-left player panel shows exact online/offline totals and every friend's cumulative playtime without growing indefinitely; each section has simple pages when needed.
 - Configurable per-team robot limits aggregate all fixed networks and surfaces; enforcement pauses only crafting machines currently producing the capped robot class, and never moves, deletes, or hides robot items.
 - Optional AI Assistance is off by default and uses one automation-science technology, a powered Uplink, per-player opt-in, one-time pairing codes, and 24 scoped MCP tools.
