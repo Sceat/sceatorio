@@ -66,6 +66,20 @@ class ElectricityIsolationTests(unittest.TestCase):
         self.assertIn("register_connector_entity(pole)", security)
         self.assertIn("sanitize_entity_wires(pole)", security)
 
+    def test_local_supply_bound_only_counts_other_teams_entities(self) -> None:
+        security = source("src/game/security.lua")
+        start = security.index("local function unauthorized_entity_supplied_by_pole")
+        end = security.index("local function", start + 1)
+        body = security[start:end]
+        self.assertIn("State.get().teams_by_id", body)
+        self.assertIn("force = force", body)
+        self.assertLess(
+            body.index("power_sharing_allowed(pole_team, other_team)"),
+            body.index("find_entities_filtered"),
+        )
+        self.assertIn("query = {area = area, force = force}", body)
+        self.assertEqual(body.count("find_entities_filtered(query)"), 1)
+
     def test_manual_wire_connections_are_audited_boundedly(self) -> None:
         control = source("control.lua")
         security = source("src/game/security.lua")

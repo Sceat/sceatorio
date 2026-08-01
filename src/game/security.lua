@@ -257,25 +257,31 @@ local function unauthorized_entity_supplied_by_pole(pole, pole_team, limit)
 
   local radius = pole.prototype.get_supply_area_distance(pole.quality)
   local position = pole.position
-  local query = {
-    area = {
-      {position.x - radius, position.y - radius},
-      {position.x + radius, position.y + radius}
-    }
+  local area = {
+    {position.x - radius, position.y - radius},
+    {position.x + radius, position.y + radius}
   }
-  if limit then query.limit = limit + 1 end
-  local entities = pole.surface.find_entities_filtered(query)
-  local saturated = limit ~= nil and #entities > limit
-  local count = limit and math.min(#entities, limit) or #entities
-  for index = 1, count do
-    local entity = entities[index]
-    if entity.valid and entity.unit_number ~= pole.unit_number then
-      local other_team = team_for_entity(entity)
-      if other_team
-        and other_team.id ~= pole_team.id
-        and not power_sharing_allowed(pole_team, other_team) then
-        local networks = network_ids_for(entity)
-        if networks[network_id] then return entity, other_team, saturated end
+  -- Only other registered teams' entities can be cross-team conflicts. Counting
+  -- neutral/enemy/own-force entities toward the bound refunded legitimate
+  -- builds inside dense single-team bases (2.0.5 false-positive fix).
+  local saturated = false
+  for _, other_team in pairs(State.get().teams_by_id) do
+    if other_team.id ~= pole_team.id
+      and not power_sharing_allowed(pole_team, other_team) then
+      local force = Teams.get_force(other_team)
+      if force and force.valid then
+        local query = {area = area, force = force}
+        if limit then query.limit = limit + 1 end
+        local entities = pole.surface.find_entities_filtered(query)
+        if limit and #entities > limit then saturated = true end
+        local count = limit and math.min(#entities, limit) or #entities
+        for index = 1, count do
+          local entity = entities[index]
+          if entity.valid then
+            local networks = network_ids_for(entity)
+            if networks[network_id] then return entity, other_team, saturated end
+          end
+        end
       end
     end
   end

@@ -3,6 +3,10 @@ local POLE_B_POSITION = {x = 116, y = 100}
 local SILENT_FOREIGN_CONSUMER_POSITION = {x = 142, y = 120}
 local SILENT_CHILD_POLE_POSITION = {x = 146, y = 120}
 local SILENT_ORIGIN_POSITION = {x = 150, y = 120}
+local DENSE_CLUSTER_CENTER = {x = 300, y = 300}
+local DENSE_CONSUMER_POSITION = {x = 295.5, y = 295.5}
+local DENSE_CLUSTER_RADIUS = 9
+local DENSE_CLUSTER_MIN_ENTITIES = 290
 local SHARED_CHUNK = {x = 3, y = 3}
 local FAR_UNGENERATED_CHUNK = {x = 10000, y = 10000}
 
@@ -65,6 +69,7 @@ script.on_nth_tick(1, function(event)
     first.set_spawn_position(POLE_A_POSITION, surface)
     second.set_spawn_position(POLE_B_POSITION, surface)
     surface.request_to_generate_chunks(SILENT_ORIGIN_POSITION, 2)
+    surface.request_to_generate_chunks(DENSE_CLUSTER_CENTER, 2)
     surface.force_generate_chunk_requests()
     fixture.system_force_name = system.name
     fixture.first_enemy_force_name = first_result.enemy_force_name
@@ -181,6 +186,94 @@ script.on_nth_tick(1, function(event)
       fail("deferred audit retained the unannounced conflicting child pole")
     end
     fixture_entity(fixture.silent_foreign_consumer)
+    fixture.phase = "dense-single-team"
+    return
+  end
+
+  -- A legitimate pole inside one team's own dense base must survive the deferred
+  -- audit: only another team's entities may count toward the saturation bound.
+  if fixture.phase == "dense-single-team" then
+    local surface = game.surfaces.nauvis
+    local force = game.forces["security-fixture-a"]
+    local center = DENSE_CLUSTER_CENTER
+    local low = DENSE_CLUSTER_RADIUS
+    local high = DENSE_CLUSTER_RADIUS - 1
+    local tiles = {}
+    for x = center.x - low - 1, center.x + low do
+      for y = center.y - low - 1, center.y + low do
+        tiles[#tiles + 1] = {name = "grass-1", position = {x, y}}
+      end
+    end
+    surface.set_tiles(tiles)
+    local area = {
+      {center.x - low - 1, center.y - low - 1},
+      {center.x + low + 1, center.y + low + 1}
+    }
+    for _, entity in pairs(surface.find_entities_filtered({area = area})) do
+      if entity.valid then entity.destroy() end
+    end
+
+    local created = 0
+    for x = center.x - low, center.x + high do
+      for y = center.y - low, center.y + high do
+        -- Leave the two-by-two substation and three-by-three machine footprints free.
+        local reserved = (
+          x >= center.x - 1 and x <= center.x
+          and y >= center.y - 1 and y <= center.y
+        ) or (
+          x >= DENSE_CONSUMER_POSITION.x - 2 and x <= DENSE_CONSUMER_POSITION.x + 1
+          and y >= DENSE_CONSUMER_POSITION.y - 2 and y <= DENSE_CONSUMER_POSITION.y + 1
+        )
+        if not reserved then
+          local belt = surface.create_entity({
+            name = "transport-belt",
+            position = {x + 0.5, y + 0.5},
+            force = force,
+            direction = defines.direction.north
+          })
+          if belt and belt.valid then created = created + 1 end
+        end
+      end
+    end
+    if created < DENSE_CLUSTER_MIN_ENTITIES then
+      fail("could not build the dense single-team cluster")
+    end
+
+    local dense_pole = surface.create_entity({
+      name = "substation",
+      position = center,
+      force = force,
+      raise_built = true
+    })
+    if not (dense_pole and dense_pole.valid) then
+      fail("could not create the dense single-team substation")
+    end
+    -- The deferred audit reaches the saturation bound through a supplied
+    -- consumer, so the legitimate build under test is powered by that pole.
+    local dense_consumer = surface.create_entity({
+      name = "assembling-machine-1",
+      position = DENSE_CONSUMER_POSITION,
+      force = force,
+      raise_built = true
+    })
+    if not (dense_consumer and dense_consumer.valid) then
+      fail("could not create the dense single-team consumer")
+    end
+    fixture.dense_pole = dense_pole
+    fixture.dense_consumer = dense_consumer
+    fixture.dense_verify_tick = event.tick + 3
+    fixture.phase = "verify-dense-single-team"
+    return
+  end
+
+  if fixture.phase == "verify-dense-single-team"
+    and event.tick >= fixture.dense_verify_tick then
+    if not (fixture.dense_pole and fixture.dense_pole.valid) then
+      fail("deferred audit refunded a legitimate pole inside a dense single-team area")
+    end
+    if not (fixture.dense_consumer and fixture.dense_consumer.valid) then
+      fail("deferred audit refunded a legitimate build inside a dense single-team area")
+    end
     fixture.phase = "connect"
     return
   end
