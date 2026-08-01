@@ -145,7 +145,7 @@ class SecuritySettingsTests(unittest.TestCase):
         control = source("control.lua")
         self.assertNotIn("Radars.chart(player.force", control)
 
-    def test_each_chart_write_is_guarded_by_chunk_generation(self) -> None:
+    def test_each_chart_refresh_is_generated_visible_aware_and_request_bounded(self) -> None:
         control = source("control.lua")
         radars = source("src/game/radars.lua")
         chart_helper = re.search(
@@ -159,8 +159,9 @@ class SecuritySettingsTests(unittest.TestCase):
             helper.index("surface.is_chunk_generated(position)"),
             helper.index("force.chart(surface, area)"),
         )
-        self.assertIn("force.is_chunk_charted(surface, position)", helper)
+        self.assertIn("force.is_chunk_visible(surface, position)", helper)
         self.assertIn("force.is_chunk_requested_for_charting(surface, position)", helper)
+        self.assertNotIn("force.is_chunk_charted(surface, position)", helper)
         self.assertIn("CHUNK_END_EPSILON", helper)
         self.assertEqual(radars.count("force.chart("), 1)
         self.assertNotIn("request_to_generate_chunks", radars)

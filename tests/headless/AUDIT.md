@@ -45,8 +45,10 @@ measurement of active logistic or construction robot performance.
 
 - Every 600 ticks, one bounded pass shares the original 70-tile connected-player
   and 112-tile team-radar footprints. Overlapping source chunks are deduplicated
-  within that pass, already-charted destinations are skipped, and every chart
-  write is preceded by `surface.is_chunk_generated`.
+  within that pass, currently visible or already-requested destinations are
+  skipped, and every chart refresh is preceded by `surface.is_chunk_generated`.
+  A generated chunk that is permanently charted but currently fogged is
+  re-charted so cross-team player and radar positions remain live.
 - There is no `on_chunk_charted` feedback handler, canonical union force,
   persistent propagation queue, or full-surface catch-up scan. Chart sharing can
   therefore neither request new terrain nor turn its own writes into a map sweep.

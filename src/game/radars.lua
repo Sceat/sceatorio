@@ -69,7 +69,10 @@ local function chart_generated_chunk(surface, position, forces)
   }
   local writes = 0
   for _, force in ipairs(forces) do
-    if not force.is_chunk_charted(surface, position)
+    -- A charted chunk can still be hidden by fog of war. Refresh that live
+    -- view so cross-team player/radar positions keep updating, while avoiding
+    -- duplicate work that Factorio is already processing.
+    if not force.is_chunk_visible(surface, position)
       and not force.is_chunk_requested_for_charting(surface, position) then
       force.chart(surface, area)
       writes = writes + 1
