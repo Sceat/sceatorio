@@ -17,7 +17,7 @@ def main() -> int:
     if len(sys.argv) < 3:
         raise SystemExit(
             "usage: matrix.py MATRIX "
-            "(version|profiles|mod-list|cases|external-mods) [ARG ...]"
+            "(version|profiles|mod-list|cases|fixtures|external-mods) [ARG ...]"
         )
 
     matrix = load_matrix(sys.argv[1])
@@ -78,6 +78,19 @@ def main() -> int:
                 and case["status"] == "implemented"
             ):
                 print(case["id"])
+        return 0
+
+    if command == "fixtures":
+        profile = sys.argv[3]
+        selected = sys.argv[4] if len(sys.argv) > 4 else "all"
+        for case in matrix["cases"]:
+            if (
+                case["runner"] == "fixture"
+                and case["profile"] == profile
+                and case["status"] == "implemented"
+                and (selected == "all" or case["fixture"] == selected)
+            ):
+                print("\t".join((case["id"], case["fixture"], case["pass_marker"])))
         return 0
 
     raise SystemExit(f"unknown matrix command: {command}")

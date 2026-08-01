@@ -233,6 +233,73 @@ EOF
     fail "server did not reach hosting state within 20 seconds"
 }
 
+run_fixture() {
+    profile=$1
+    fixture_manifest="$TEST_ROOT/fixtures.tsv"
+    python3 "$MATRIX_HELPER" "$MATRIX" fixtures \
+        "$profile" "$FIXTURE_FILTER" > "$fixture_manifest"
+    [ -s "$fixture_manifest" ] || fail "no implemented fixture for profile=$profile filter=$FIXTURE_FILTER"
+
+    tab=$(printf '\t')
+    while IFS="$tab" read -r case_id fixture_name pass_marker; do
+        fixture_source="$REPO_ROOT/tests/fixtures/$fixture_name"
+        [ -f "$fixture_source/control.lua" ] || fail "missing fixture control.lua: $fixture_source"
+        mkdir -p "$WRITE_DATA/scenarios"
+        cp -R "$fixture_source" "$WRITE_DATA/scenarios/$fixture_name"
+        write_mod_list "$profile"
+
+        fixture_log="$WRITE_DATA/$fixture_name.log"
+        fixture_settings="$WRITE_DATA/$fixture_name-server-settings.json"
+        cat > "$fixture_settings" <<'EOF'
+{
+  "name": "Sceatorio isolated fixture",
+  "description": "Disposable local integration test",
+  "visibility": {"public": false, "lan": false},
+  "require_user_verification": false,
+  "auto_pause": false
+}
+EOF
+        echo "headless-test: running $case_id"
+        run_factorio \
+            --start-server-load-scenario "$fixture_name" \
+            --bind 127.0.0.1 \
+            --port "${FACTORIO_TEST_PORT:-34199}" \
+            --server-settings "$fixture_settings" \
+            --server-id "$WRITE_DATA/$fixture_name-server-id.json" \
+            > "$fixture_log" 2>&1 &
+        fixture_pid=$!
+
+        attempts=0
+        while [ "$attempts" -lt 80 ]; do
+            if grep -Fq "$pass_marker" "$fixture_log"; then
+                kill -TERM "$fixture_pid" 2>/dev/null || true
+                wait "$fixture_pid" 2>/dev/null || true
+                echo "headless-test: $case_id emitted $pass_marker"
+                break
+            fi
+            if grep -Eq 'SCEATORIO_[A-Z_]+_FAIL' "$fixture_log"; then
+                kill -TERM "$fixture_pid" 2>/dev/null || true
+                wait "$fixture_pid" 2>/dev/null || true
+                sed -n '1,260p' "$fixture_log" >&2
+                fail "$case_id emitted a failure marker"
+            fi
+            if ! kill -0 "$fixture_pid" 2>/dev/null; then
+                wait "$fixture_pid" || true
+                sed -n '1,260p' "$fixture_log" >&2
+                fail "$case_id exited before $pass_marker"
+            fi
+            attempts=$((attempts + 1))
+            sleep 0.25
+        done
+        if [ "$attempts" -ge 80 ]; then
+            kill -TERM "$fixture_pid" 2>/dev/null || true
+            wait "$fixture_pid" 2>/dev/null || true
+            sed -n '1,260p' "$fixture_log" >&2
+            fail "$case_id did not emit $pass_marker within 20 seconds"
+        fi
+    done < "$fixture_manifest"
+}
+
 run_profiles() {
     command_name=$1
     selected_profile=$2
@@ -247,6 +314,7 @@ run_profiles() {
             smoke) run_smoke "$profile" ;;
             server) run_server "$profile" ;;
             benchmark) run_benchmark "$profile" ;;
+            fixture) run_fixture "$profile" ;;
             *) fail "unsupported command: $command_name" ;;
         esac
     done
@@ -254,11 +322,17 @@ run_profiles() {
 
 command_name=${1:-smoke}
 profile=${2:-all}
-EXTERNAL_MOD_SET=${3:-}
+if [ "$command_name" = "fixture" ]; then
+    FIXTURE_FILTER=${3:-all}
+    EXTERNAL_MOD_SET=""
+else
+    FIXTURE_FILTER="all"
+    EXTERNAL_MOD_SET=${3:-}
+fi
 
 case "$command_name" in
-    smoke|server|benchmark) ;;
-    *) fail "usage: tests/headless/run.sh (smoke|server|benchmark) [base|space-age|all] [external-mod-set]" ;;
+    smoke|server|benchmark|fixture) ;;
+    *) fail "usage: tests/headless/run.sh (smoke|server|benchmark|fixture) [base|space-age|all] [external-mod-set|fixture]" ;;
 esac
 
 command -v python3 >/dev/null 2>&1 || fail "python3 is required to read matrix.json"

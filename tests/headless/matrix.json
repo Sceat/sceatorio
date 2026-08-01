@@ -142,6 +142,15 @@
       "requirement": "An isolated multiplayer server reaches the hosting state with the mod enabled."
     },
     {
+      "id": "security.runtime-wire-isolation",
+      "profile": "base",
+      "runner": "fixture",
+      "status": "implemented",
+      "fixture": "security",
+      "pass_marker": "SCEATORIO_SECURITY_PASS",
+      "requirement": "The bounded runtime audit removes a manual cross-team copper connection without deleting an overlapping script-built consumer."
+    },
+    {
       "id": "load.space-age.required-server-mods",
       "profile": "space-age",
       "runner": "external-smoke",

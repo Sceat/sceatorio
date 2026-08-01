@@ -1,7 +1,7 @@
 # Factorio 2.1.12, Space Age, robot-cap, and server-mod audit
 
-Audit date: 2026-08-01. Gameplay code was inspected read-only for this audit;
-the only implementation changes made here are under `tests/headless/`.
+Audit date: 2026-08-01. The audit informed the Factorio 2.1/Space Age runtime
+implementation and its static and isolated-engine validation under `tests/`.
 
 ## Verified engine baseline
 
@@ -11,14 +11,17 @@ the only implementation changes made here are under `tests/headless/`.
   application version `2.1.12`, runtime API version `6`, and have identical
   SHA-256 `a60e482db523d3910f5ef6081032efc51862dc92e2523b35b263f501e956f310`.
 - `tests/headless/run.sh smoke all` passed against isolated base and Space Age
-  profiles. Both completed `on_init` and 120 benchmark ticks. Base averaged
-  `0.267 ms/update`; Space Age averaged `0.281 ms/update`.
+  profiles after the Space Age and robot-policy implementation. Both completed
+  `on_init` and 120 benchmark ticks. The latest run averaged `0.265 ms/update`
+  for base and `0.278 ms/update` for Space Age.
 - `tests/headless/run.sh server space-age` created a save, reloaded it through
   the dedicated-server path, and reached `Hosting game` and
   `CreatingGame -> InGame`. The harness uses `SIGTERM` for bounded teardown;
   a background POSIX shell can inherit ignored `SIGINT`.
 - The fixed-seed Space Age engine baseline completed three 3,600-tick runs at
   `0.270`, `0.269`, and `0.272 ms/update`, all with checksum `3216346747`.
+- The isolated `security.runtime-wire-isolation` runtime fixture passed on the
+  same build, and the full static suite passed 31/31 checks.
 
 These are real engine load and empty-save overhead results. They are **not** a
 measurement of active logistic or construction robot performance.
@@ -26,49 +29,47 @@ measurement of active logistic or construction robot performance.
 Official references: [2.1.12 runtime API](https://lua-api.factorio.com/latest/),
 [command-line parameters](https://wiki.factorio.com/Command_line_parameters).
 
-## Remaining surface and Space Age gaps
+## Implemented surface and Space Age policy
 
-The 2.1 port now has useful surface-keyed foundations:
+The 2.1 port now has surface-keyed foundations and a secondary-planet state
+machine:
 
 - `src/game/teams.lua:170-194` stores one surface record per team and
   `src/game/teams.lua:196-221` finds only spawns on the queried surface.
-- `src/game/spawns.lua:260-271` joins the target force and uses the target
-  surface rather than deriving a force from a player name.
-- `src/game/spawns.lua:421-437` correctly uses `event.surface` for generated
-  chunks.
-
-The secondary-planet feature is not implemented yet, and the existing primary
-spawn mutator is not planet-safe:
-
-- `src/game/spawns.lua:8-30` is a Nauvis-only terrain/resource profile.
-- `src/game/spawns.lua:50-101` deletes native resources, cliffs, trees, and
-  decoratives, paints `sand-1`, adds Nauvis ores/crude oil, and creates water.
-  Applying it on Vulcanus, Fulgora, Gleba, or Aquilo would damage native
-  progression and can create invalid terrain/resource combinations.
-- `src/game/spawns.lua:296-325` creates only the initial spawn on the player's
-  current lobby surface.
-- `control.lua:64-69` observes surface changes only for evolution; it does not
-  allocate a team spawn on first planetary arrival.
-- `src/game/spawns.lua:403-406` calls `force_generate_chunk_requests()` from a
-  periodic handler. Secondary generation should remain asynchronous to avoid a
-  large multiplayer tick stall.
-- `src/game/offlineSecurity.lua:1-16` still scans only `nauvis`; protection must
-  cover all surfaces and must not protect a whole team merely because one
-  teammate disconnected while another is online.
-- No freeplay remote calls currently suppress vanilla intro/crash-site/starter
-  items. The 2.1 base freeplay interface supports `set_skip_intro`,
-  `set_disable_crashsite`, `set_created_items`, and `set_respawn_items`.
+- `src/game/planetSpawns.lua` stores one reservation per team and real planet
+  surface. The first physical arrival reserves it before chunk generation;
+  later teammates reuse it.
+- Real planets are detected from `surface.planet`; `surface.platform` is
+  excluded. Unknown modded planets use the same preserve-native fallback.
+- Candidate work is bounded and uses only `request_to_generate_chunks` plus
+  generated-chunk checks. It does not paint tiles, add resources, remove cliffs
+  or decoratives, or synchronously force secondary chunks.
+- Vulcanus candidates avoid demolisher territories. Immediate hostile clearing
+  is limited to conventional Nauvis/Gleba units, spawners, and turrets;
+  segmented units and unknown-planet mechanics are untouched.
+- Player arrival uses `player.character.surface`, so Space Age remote view does
+  not allocate a false spawn. Join, respawn, cargo-pod, force-merge, runtime
+  setting, and surface-deletion paths are wired.
+- Each human team retains its own spawn, economy, and evolution ledger on every
+  planet. Human-team friendship, ceasefire, and native force chart sharing do
+  not merge those records or alter per-team enemy-force assignment.
+- A first surface-targeted cargo pod is held while its asynchronous reservation
+  finishes, then released to the stable exact position. Landing-pad and other
+  non-surface destinations remain native. The pod and cargo are never deleted.
+- Guarded Freeplay remote calls disable the intro, crash site, and duplicate
+  starter/respawn item grants without assuming the interface exists.
 
 ### Exact secondary-spawn invariant
 
-Store exactly one authoritative record at:
+The authoritative record lives under the existing team surface record:
 
 ```text
-storage.sceatorio.team_spawns[force_index][surface_index] = {
-  force_index, surface_index, planet_name,
-  state = "reserved" | "generating" | "ready" | "retired",
-  position, requested_radius, queued_player_indices,
-  arrival_pod_unit_numbers, created_tick
+storage.sceatorio.teams[team_id].surfaces[surface_index] = {
+  spawn,
+  planet_spawn = {
+    state = "generating" | "ready",
+    planet_name, candidate, waiting_players, cargo_pods, created_tick
+  }
 }
 ```
 
@@ -84,10 +85,8 @@ A supported terrestrial destination must satisfy all of the following:
 1. `surface.valid` is true.
 2. `surface.planet` is non-nil.
 3. `surface.platform` is nil. Never infer this from a surface-name prefix.
-4. `surface.planet.name` has a registered profile (initially `nauvis`,
-   `vulcanus`, `fulgora`, `gleba`, or `aquilo`). Unknown modded planets use a
-   preserve-native fallback or are disabled by setting; they never receive the
-   Nauvis mutator.
+4. Unknown modded planets use a preserve-native fallback; they never receive
+   the initial-Nauvis terrain/resource mutator.
 
 ### Arrival event/state flow
 
@@ -203,16 +202,16 @@ entity search. Only an exceeded network enters the slower cell/inventory path.
 Networks split and merge, so cache cursors rather than durable network identity
 and rebuild them safely each cycle.
 
-### Proposed policy (requires the controlled benchmark)
+### Implemented conservative policy
 
-These are conservative gameplay starting points, not claims about universal
-UPS limits:
+Caps are force-wide across all fixed networks and surfaces so a team cannot
+evade them by splitting a network. Static platform roboports are included;
+personal/mobile cells are excluded. Logistic and construction classes are
+counted independently using engine-maintained network aggregates.
 
-| Scope | Logistic soft / hard | Construction soft / hard |
+| Portal default | Logistic cap | Construction cap |
 | --- | ---: | ---: |
-| Static network | 250 / 500 | 1,000 / 2,500 |
-| Force + surface | 750 / 1,000 | 3,500 / 5,000 |
-| Force global | 2,000 / 2,500 | 10,000 / 12,500 |
+| `warn` | 500 | 5,000 |
 
 Do not scale a live hard cap down when players disconnect; that creates surprise
 quarantines. Per-user authoritative caps are impossible because a logistic
@@ -220,9 +219,10 @@ network does not attribute shared robots to individual players. Use fixed
 server-global defaults plus admin-set per-force overrides. Per-user options are
 only notification/dashboard preferences.
 
-For a portal release, default to warning-only until the fixture establishes a
-safe policy on representative hardware. A curated dedicated-server preset can
-enable strict enforcement. Wube's own performance work shows that busy robots,
+The runtime mode is `disabled`, `warn`, or `enforce`; `warn` is the portal
+default until the controlled fixture establishes a safe policy on
+representative hardware. Zero means unlimited. A curated dedicated-server
+preset can enable strict enforcement. Wube's own performance work shows that busy robots,
 jobs, charging, roboport count, and network geometry matter; robots are not
 categorically slower than belts in every factory:
 [FFF-415](https://factorio.com/blog/post/fff-415),
@@ -231,7 +231,7 @@ categorically slower than belts in every factory:
 
 ### No-silent-loss enforcement
 
-Strict mode should quarantine **only stationary excess logistic robots**:
+Strict mode quarantines **only stationary excess robot stacks**:
 
 1. When a static network exceeds a hard layer, inspect its non-mobile cells.
 2. Read each cell owner's `roboport_robot` inventory. Identify modded robot items
@@ -245,8 +245,9 @@ Strict mode should quarantine **only stationary excess logistic robots**:
    silently spill carried items.
 5. Expose status and recovery through localized UI/admin commands. Raising or
    disabling a cap should return quarantined robots when capacity exists.
-6. Document/export the vault before mod removal and migrate it on force merge or
-   surface deletion.
+6. `/sceatorio-robot-status` reports policy state and
+   `/sceatorio-robot-recover` returns recoverable vault contents. Vaults migrate
+   on force merge and remain recoverable after surface deletion.
 
 Do not disable vanilla robot recipes/technologies: that conflicts with research
 and other mods, does not catch imported robots, and cannot distinguish the two
@@ -254,8 +255,10 @@ robot classes reliably.
 
 ### Required performance fixture
 
-`matrix.json` keeps robot integration/benchmark cases planned until a fixture
-exists. Use fixed seeds and saves, warm the map, then run at least 36,000 ticks
+`matrix.json` keeps robot integration/benchmark cases planned until a controlled
+workload fixture exists. The implementation has static invariants and empty-map
+engine coverage, but those are not robot performance measurements. Use fixed
+seeds and saves, warm the map, then run at least 36,000 ticks
 and five measured repetitions. Vary:
 
 - 1/8/24 forces and 1/5 terrestrial surfaces;
@@ -410,16 +413,12 @@ only until those fixes ship. Do not fork AAI Containers.
 
 ## Prioritized implementation order
 
-1. Add the force/surface reservation state machine, exact supported-surface
-   predicate, cargo-pod events, surface/force merge cleanup, and freeplay remote
-   integration.
-2. Split initial Nauvis terrain from preserve-native planetary safety profiles;
-   eliminate blocking generation from periodic handlers.
-3. Add robot telemetry and localized warning-only policy using native network
-   counts; build the controlled benchmark before enabling strict defaults.
-4. Add stationary-only, quality-preserving quarantine and recovery with explicit
-   failure alerts; implement the planned no-silent-loss integration case.
-5. Supply the six pinned third-party archives to the isolated staging command,
+1. Add controlled runtime fixtures for simultaneous same-team planet arrivals,
+   cargo-pod holding/release, force merge, surface deletion, and no-silent-loss
+   robot recovery.
+2. Build the controlled robot workload benchmark before changing the `warn`
+   portal default or claiming a server-safe universal cap.
+3. Supply the six pinned third-party archives to the isolated staging command,
    run combined smoke/server/benchmark tests, and reproduce Cargo findings.
-6. Upstream the Cargo hardening patch or pin a minimal GPL fork for public
+4. Upstream the Cargo hardening patch or pin a minimal GPL fork for public
    multiplayer, then run a real two-client join/planet-arrival/desync matrix.
