@@ -43,6 +43,7 @@ class MetadataTests(unittest.TestCase):
         harness = source("tests/headless/run.sh")
         self.assertNotIn("required-server", suite)
         self.assertIn("run_factorio_background()", harness)
+        self.assertNotIn("--disable-audio", harness)
         background = re.search(
             r"run_factorio_background\(\) \{(.*?)\n\}",
             harness,

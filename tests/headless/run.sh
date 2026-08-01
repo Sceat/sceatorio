@@ -176,7 +176,6 @@ run_factorio() {
     "$FACTORIO_BIN_PATH" \
         --config "$CONFIG_FILE" \
         --mod-directory "$MODS_DIR" \
-        --disable-audio \
         "$@"
 }
 
@@ -187,7 +186,6 @@ run_factorio_background() {
     exec "$FACTORIO_BIN_PATH" \
         --config "$CONFIG_FILE" \
         --mod-directory "$MODS_DIR" \
-        --disable-audio \
         "$@"
 }
 
