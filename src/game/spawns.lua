@@ -69,6 +69,41 @@ local function clear_hostiles(surface, area)
   end
 end
 
+local DOWNGRADED_WORMS = {
+  ["big-worm-turret"] = true,
+  ["behemoth-worm-turret"] = true
+}
+local WORM_REPLACEMENT = "small-worm-turret"
+
+-- Vanilla map generation places big and behemoth worms purely by distance from
+-- the origin, and team spawns land 90-110 chunks out. Multiplayer lockstep
+-- forbids drawing from the shared RNG stream here: the surviving set has to
+-- resolve identically on every peer, so it is derived from the entity's own
+-- position instead. Keeps one nest in three.
+local function survives_thinning(position)
+  return (math.floor(position.x) + math.floor(position.y)) % 3 == 0
+end
+
+-- Warning ring, between the safe zone and the warning zone: worms are
+-- downgraded to their smallest variant and nests are thinned rather than the
+-- ring being wiped, so it stays a soft border instead of a second safe zone.
+local function soften_in_warning_ring(surface, entity)
+  local position = entity.position
+  if DOWNGRADED_WORMS[entity.name] then
+    local force = entity.force
+    entity.destroy()
+    if prototypes.entity[WORM_REPLACEMENT] then
+      surface.create_entity({
+        name = WORM_REPLACEMENT,
+        position = position,
+        force = force
+      })
+    end
+  elseif not survives_thinning(position) then
+    entity.destroy()
+  end
+end
+
 local function prepare_spawn(record, surface, spawn)
   local base_area = Compute.area_around(spawn, CONFIG.base_size)
   local safe_area = Compute.area_around(spawn, CONFIG.safe_zone)
@@ -589,9 +624,8 @@ function Spawns.on_chunk_generated(event)
         or CONFIG.safe_zone
       if nearest.distance < safe_zone then
         entity.destroy()
-      elseif not native_preserving and nearest.distance < CONFIG.warning_zone
-        and math.random(0, 100) <= 70 then
-        entity.destroy()
+      elseif not native_preserving and nearest.distance < CONFIG.warning_zone then
+        soften_in_warning_ring(surface, entity)
       end
     end
   end
