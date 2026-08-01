@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": 1,
+  "factorio": {
+    "version": "2.1.12",
+    "runtime_api_version": 6,
+    "built_in_mods": [
+      "base",
+      "elevated-rails",
+      "quality",
+      "recycler",
+      "space-age"
+    ]
+  },
+  "profiles": {
+    "base": {
+      "enabled_built_in_mods": [
+        "base"
+      ]
+    },
+    "space-age": {
+      "enabled_built_in_mods": [
+        "base",
+        "elevated-rails",
+        "quality",
+        "recycler",
+        "space-age"
+      ]
+    }
+  },
+  "external_mod_sets": {
+    "required-server": {
+      "artifact_status": "portal-auth-required",
+      "tested": false,
+      "factorio_version": "2.1.12",
+      "source_audit": {
+        "repository": "https://github.com/robot256/cargo_ships",
+        "branch": "V2.1support",
+        "commit": "fe495302ea4ad289237defe0b0918bb13ee90e9c"
+      },
+      "mods": [
+        {
+          "name": "aai-containers",
+          "version": "0.4.0",
+          "sha1": "61add69db9376ee603ebd5226083b7c10ef5ebe5",
+          "direct": true,
+          "license": "Limited Distribution Only Licence",
+          "dependencies": [
+            "base >= 2.1.7",
+            "(?) space-age >= 2.1.0"
+          ]
+        },
+        {
+          "name": "cargo-ships",
+          "version": "2.1.6",
+          "sha1": "07f75fe39d7a408851e3021c0220b979840e6148",
+          "direct": true,
+          "license": "GNU GPLv3",
+          "dependencies": [
+            "base",
+            "cargo-ships-graphics",
+            "Robot256Lib",
+            "+ cargo-ships-floating-electric-pole",
+            "+ cargo-ships-oil-rig",
+            "(?) factorio-world",
+            "(?) Hovercrafts",
+            "? Krastorio2",
+            "? space-exploration"
+          ]
+        },
+        {
+          "name": "cargo-ships-oil-rig",
+          "version": "2.1.2",
+          "sha1": "f80eb6e6b3fbbd4f52eb7dad251227b91f887612",
+          "direct": true,
+          "license": "GNU GPLv3",
+          "dependencies": [
+            "base",
+            "Robot256Lib",
+            "(?) factorio-world",
+            "(?) SeaBlock",
+            "(?) Hovercrafts",
+            "(?) angelspetrochem",
+            "(?) ctgtemp2",
+            "? Krastorio2",
+            "? space-exploration"
+          ]
+        },
+        {
+          "name": "cargo-ships-floating-electric-pole",
+          "version": "2.1.0",
+          "sha1": "e396177bc24cd6089ecd26c8e62677a6bf1cb772",
+          "direct": true,
+          "license": "GNU GPLv3",
+          "dependencies": [
+            "base"
+          ]
+        },
+        {
+          "name": "cargo-ships-graphics",
+          "version": "2.1.0",
+          "sha1": "f08343883f7abc646f51bd139dde5c58da2da13f",
+          "direct": false,
+          "license": "GNU LGPLv3",
+          "dependencies": [
+            "base"
+          ]
+        },
+        {
+          "name": "Robot256Lib",
+          "version": "2.1.4",
+          "sha1": "faca9227166b3aa627afed0f5fc275646da267fe",
+          "direct": false,
+          "license": "MIT",
+          "dependencies": [
+            "base >= 2.1.12"
+          ]
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "load.base",
+      "profile": "base",
+      "runner": "smoke",
+      "status": "implemented",
+      "requirement": "The mod loads and completes on_init with Factorio base 2.1.12."
+    },
+    {
+      "id": "load.space-age",
+      "profile": "space-age",
+      "runner": "smoke",
+      "status": "implemented",
+      "requirement": "The mod loads and completes on_init with Space Age 2.1.12 enabled."
+    },
+    {
+      "id": "server.space-age",
+      "profile": "space-age",
+      "runner": "server",
+      "status": "implemented",
+      "requirement": "An isolated multiplayer server reaches the hosting state with the mod enabled."
+    },
+    {
+      "id": "load.space-age.required-server-mods",
+      "profile": "space-age",
+      "runner": "external-smoke",
+      "status": "blocked-artifacts",
+      "external_mod_set": "required-server",
+      "requirement": "Sceatorio and the complete pinned six-archive server dependency closure load together on Factorio 2.1.12.",
+      "blocker": "Factorio Mod Portal downloads require account authentication; no user profile or token is read by this harness."
+    },
+    {
+      "id": "server.space-age.required-server-mods",
+      "profile": "space-age",
+      "runner": "external-server",
+      "status": "blocked-artifacts",
+      "external_mod_set": "required-server",
+      "requirement": "The complete pinned server mod set reaches multiplayer hosting state on Factorio 2.1.12.",
+      "blocker": "Provide the six verified archives to the isolated harness; credential-free portal download redirects to login."
+    },
+    {
+      "id": "planet.first-arrival-per-force",
+      "profile": "space-age",
+      "runner": "integration",
+      "status": "planned",
+      "requirement": "The first team arrival creates exactly one tracked spawn per force and supported planet surface; later teammates reuse it."
+    },
+    {
+      "id": "planet.exclude-platforms",
+      "profile": "space-age",
+      "runner": "integration",
+      "status": "planned",
+      "requirement": "Space-platform surfaces never receive terrestrial spawn generation or terrain mutation."
+    },
+    {
+      "id": "planet.safe-profiles",
+      "profile": "space-age",
+      "runner": "integration",
+      "status": "planned",
+      "requirement": "Nauvis, Vulcanus, Fulgora, Gleba, and Aquilo use valid planet-specific terrain, resources, and enemy safety behavior."
+    },
+    {
+      "id": "robot.count-by-network-and-force",
+      "profile": "space-age",
+      "runner": "integration",
+      "status": "planned",
+      "requirement": "Logistic and construction robots are counted independently per network, surface-force, and force."
+    },
+    {
+      "id": "robot.no-silent-loss",
+      "profile": "space-age",
+      "runner": "integration",
+      "status": "planned",
+      "requirement": "Cap enforcement never destroys robots or carried items and exposes every held robot for recovery."
+    },
+    {
+      "id": "robot.cap-overhead",
+      "profile": "space-age",
+      "runner": "benchmark",
+      "status": "planned",
+      "requirement": "Cap monitoring is benchmarked disabled, warning-only, and enforced across controlled robot and network counts."
+    },
+    {
+      "id": "engine.baseline",
+      "profile": "space-age",
+      "runner": "benchmark",
+      "status": "implemented",
+      "requirement": "The current mod receives a repeatable headless engine baseline before controlled robot workloads are added."
+    }
+  ]
+}
