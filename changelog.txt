@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.0.8
+Date: 2026-08-01
+  Bugfixes:
+    - Shared player and radar positions now refresh on every 10-second pass instead of every other one, closing a ten-second gap where a teammate's map marker disappeared.
+    - The admin settings command now rejects values Factorio silently coerced when written and payloads that are not string-keyed objects, so a malformed apply can no longer report success.
+---------------------------------------------------------------------------------------------------
 Version: 2.0.7
 Date: 2026-08-01
   Changes:
