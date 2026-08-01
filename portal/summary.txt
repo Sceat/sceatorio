@@ -1,0 +1,1 @@
+Build apart, explore together. Sceatorio creates a friendly persistent Factorio 2.1 multiplayer world with distant team spawns, independent enemies and per-surface evolution, shared radar discovery, immediate offline protection, isolated-by-default power, safe Space Age landings, and configurable robot limits.

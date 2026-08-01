@@ -1,5 +1,6 @@
 local State = require("src.core.state")
 local Teams = require("src.game.teams")
+local SurfacePolicy = require("src.game.surfacePolicy")
 
 local PlanetSpawns = {}
 
@@ -25,26 +26,17 @@ local function separation()
   return setting("sceatorio-planet-spawn-separation", 1024)
 end
 
+local function generation_chunk_radius()
+  return math.ceil(safety_radius() / CHUNK_SIZE) + 1
+end
+
 local function copy_position(position)
   return {x = position.x, y = position.y}
 end
 
-local function planet_for(surface)
-  local ok, planet = pcall(function() return surface.planet end)
-  return ok and planet or nil
-end
-
-local function platform_for(surface)
-  local ok, platform = pcall(function() return surface.platform end)
-  return ok and platform or nil
-end
-
 function PlanetSpawns.is_supported(surface)
   return enabled()
-    and surface
-    and surface.valid
-    and platform_for(surface) == nil
-    and planet_for(surface) ~= nil
+    and SurfacePolicy.is_real_planet(surface)
 end
 
 function PlanetSpawns.physical_surface(player)
@@ -123,8 +115,7 @@ local function choose_candidate(record, surface, metadata)
     metadata.attempt = metadata.attempt + 1
     if sufficiently_separated(record, surface, candidate) then
       metadata.candidate = candidate
-      local chunks = math.ceil(safety_radius() / CHUNK_SIZE) + 1
-      surface.request_to_generate_chunks(candidate, chunks)
+      surface.request_to_generate_chunks(candidate, generation_chunk_radius())
       return true
     end
   end
@@ -132,7 +123,7 @@ local function choose_candidate(record, surface, metadata)
 end
 
 local function mark_existing_primary(record, surface, surface_record)
-  local planet = planet_for(surface)
+  local planet = SurfacePolicy.planet(surface)
   if not (surface_record and surface_record.spawn) then return false end
   if not (surface_record.terrain_ready or (planet and planet.name == "nauvis")) then
     return false
@@ -185,7 +176,7 @@ function PlanetSpawns.request_spawn(record, surface, anchor, player, reason)
   if not anchor then return nil end
   surface_record = surface_record or Teams.ensure_surface(record, surface)
   surface_record.spawn = nil
-  local planet = planet_for(surface)
+  local planet = SurfacePolicy.planet(surface)
   surface_record.planet_spawn = {
     state = "generating",
     planet_name = planet and planet.name or surface.name,
@@ -220,18 +211,49 @@ local function in_vulcanus_territory(surface, metadata)
   return ok and territory ~= nil
 end
 
-local function clear_immediate_hostiles(surface, position, planet_name)
+local function hostile_generation_area(position)
+  local radius = generation_chunk_radius()
+  local chunk_x = math.floor(position.x / CHUNK_SIZE)
+  local chunk_y = math.floor(position.y / CHUNK_SIZE)
+  return {
+    {(chunk_x - radius) * CHUNK_SIZE, (chunk_y - radius) * CHUNK_SIZE},
+    {(chunk_x + radius + 1) * CHUNK_SIZE, (chunk_y + radius + 1) * CHUNK_SIZE}
+  }
+end
+
+local function reassign_existing_default_hostiles(surface, position, planet_name)
+  if not SurfacePolicy.is_native_hostile_surface(surface) then return end
+  -- If the arrival candidate was already generated, on_chunk_generated cannot
+  -- classify its native enemies. Reconcile only the same bounded chunk square
+  -- requested for the candidate, and only entities still owned by the built-in
+  -- enemy force. Special factions and already paired team enemies are untouched.
+  for _, entity in pairs(surface.find_entities_filtered({
+    area = hostile_generation_area(position),
+    force = game.forces.enemy,
+    type = {"unit", "unit-spawner", "turret"}
+  })) do
+    if entity.valid then
+      local nearest = Teams.find_nearest(surface, entity.position)
+      if nearest.team and nearest.enemy_force then entity.force = nearest.enemy_force end
+    end
+  end
+end
+
+local function clear_immediate_hostiles(record, surface, position, planet_name)
   -- Segmented units (demolishers), resources, cliffs, tiles, decoratives, and
   -- unknown-planet entities are deliberately outside this native-preserving
   -- safety pass.
-  if planet_name ~= "nauvis" and planet_name ~= "gleba" then return end
+  if not SurfacePolicy.is_native_hostile_surface(surface) then return end
+  local own_enemy = Teams.get_enemy_force(record)
   for _, entity in pairs(surface.find_entities_filtered({
     position = position,
     radius = safety_radius(),
     type = {"unit", "unit-spawner", "turret"}
   })) do
-    if entity.valid
-      and (entity.force == game.forces.enemy or Teams.get_by_enemy_force(entity.force)) then
+    if entity.valid and (
+      entity.force == game.forces.enemy
+      or (own_enemy and entity.force.index == own_enemy.index)
+    ) then
       entity.destroy()
     end
   end
@@ -268,8 +290,11 @@ local function route_waiters(record, surface, metadata, spawn)
 end
 
 local function set_cargo_hold(cargo_pod, held)
-  local ok = pcall(function() cargo_pod.disabled_by_script = held end)
-  return ok
+  local ok, confirmed = pcall(function()
+    cargo_pod.disabled_by_script = held
+    return cargo_pod.disabled_by_script == held
+  end)
+  return ok and confirmed
 end
 
 local function route_cargo_pods(surface, metadata, spawn)
@@ -327,7 +352,8 @@ local function finalize(record, surface, surface_record)
     return false
   end
 
-  clear_immediate_hostiles(surface, spawn, metadata.planet_name)
+  reassign_existing_default_hostiles(surface, metadata.candidate, metadata.planet_name)
+  clear_immediate_hostiles(record, surface, spawn, metadata.planet_name)
   surface_record.spawn = copy_position(spawn)
   surface_record.terrain_ready = true
   metadata.state = "ready"
@@ -466,6 +492,12 @@ function PlanetSpawns.on_cargo_pod_started_ascending(event)
     ground_destination = true,
     transform_launch_products = destination.transform_launch_products
   }
+  if read_ok and not already_disabled and not held then
+    -- CargoPod may ignore disabled_by_script writes. Fail open: keep its native
+    -- destination, let descent finish, and let the authoritative arrival path
+    -- record/route the physical character without claiming that the pod paused.
+    player.print({"sceatorio.planet-spawn-cargo-native-fallback"})
+  end
   player.print({"sceatorio.planet-spawn-preparing"})
 end
 
@@ -550,6 +582,68 @@ function PlanetSpawns.on_forces_merged(event)
       enqueue(surviving, surface_record)
     end
   end
+end
+
+-- Explicit administrator diagnostic path. It deliberately delegates to the
+-- same reservation/waiter state machine as physical arrivals instead of
+-- fabricating surface or cargo events.
+function PlanetSpawns.debug_route_player(player, surface)
+  if not (player and player.valid and player.character and player.character.valid) then
+    return false, "A physical character is required."
+  end
+  if not PlanetSpawns.is_supported(surface) then
+    return false, "The selected surface is not an enabled real planet."
+  end
+  local record = Teams.get_for_player(player)
+  if not record then return false, "Join a Sceatorio team first." end
+  local force = Teams.get_force(record)
+  local anchor = force and force.get_spawn_position(surface) or {x = 0, y = 0}
+  local spawn = PlanetSpawns.request_spawn(
+    record,
+    surface,
+    anchor,
+    player,
+    "team-join"
+  )
+  if spawn then
+    return player.teleport(spawn, surface), "ready"
+  end
+  return true, "queued"
+end
+
+-- Planet surfaces are lazy in Space Age. The administrator test menu names a
+-- LuaPlanet, creates only that selected surface, and then exercises the exact
+-- production reservation/waiter path above. Platforms can never enter here.
+function PlanetSpawns.debug_route_player_to_planet(player, planet)
+  if not (player and player.valid and player.character and player.character.valid) then
+    return false, "A physical character is required."
+  end
+  if not enabled() then return false, "Planet spawns are disabled." end
+  if not (planet and planet.valid and type(planet.name) == "string") then
+    return false, "The selected planet is unavailable."
+  end
+  local registered = game.planets[planet.name]
+  if not (registered and registered.valid) then
+    return false, "The selected planet is unavailable."
+  end
+  if not Teams.get_for_player(player) then return false, "Join a Sceatorio team first." end
+
+  local surface_ok, surface = pcall(function() return registered.surface end)
+  if not surface_ok then return false, "The selected planet surface is unavailable." end
+  if not (surface and surface.valid) then
+    local created_ok, created = pcall(function() return registered.create_surface() end)
+    if not created_ok or not (created and created.valid) then
+      return false, "The selected planet surface could not be created."
+    end
+    surface = created
+  end
+  return PlanetSpawns.debug_route_player(player, surface)
+end
+
+function PlanetSpawns.debug_return_to_nauvis(player)
+  local surface = game.surfaces.nauvis
+  if not (surface and surface.valid) then return false, "Nauvis is unavailable." end
+  return PlanetSpawns.debug_route_player(player, surface)
 end
 
 return PlanetSpawns

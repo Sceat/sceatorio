@@ -4,6 +4,11 @@
   "factorio": {
     "version": "2.1.12",
     "runtime_api_version": 6,
+    "headless": {
+      "filename": "factorio-headless_linux_2.1.12.tar.xz",
+      "url": "https://factorio.com/get-download/2.1.12/headless/linux64",
+      "sha256": "885ff029a40b0edd815cfe1fc13845f232723da1ea8fe9a83eae114d1eccd3fe"
+    },
     "built_in_mods": [
       "base",
       "elevated-rails",
@@ -135,6 +140,15 @@
       "requirement": "The mod loads and completes on_init with Space Age 2.1.12 enabled."
     },
     {
+      "id": "ai.gateway-real-udp-mcp",
+      "profile": "base",
+      "runner": "ai-e2e",
+      "status": "implemented",
+      "fixture": "ai-gateway",
+      "pass_marker": "SCEATORIO_AI_E2E_PASS",
+      "requirement": "A one-time RCON-issued code is exchanged over real Lua UDP, all 24 scoped operations cross the Factorio 2.1.12 gateway, stdio MCP lists and invokes the catalog, and replay, expiry, scope mismatch, and revoke fail closed."
+    },
+    {
       "id": "server.space-age",
       "profile": "space-age",
       "runner": "server",
@@ -148,7 +162,43 @@
       "status": "implemented",
       "fixture": "security",
       "pass_marker": "SCEATORIO_SECURITY_PASS",
-      "requirement": "The bounded runtime audit removes a manual cross-team copper connection without deleting an overlapping script-built consumer."
+      "requirement": "Internal-looking system forces remain unregistered; explicit teams keep isolated enemy pairs through a force merge; chart-copy reconciliation stays non-recursive; a saturated chart queue completes a mid-pass versioned catch-up without exceeding fixed capacity; the runtime audit removes a manual cross-team copper connection; and the bounded next-tick audit rejects a visible parent plus its unannounced same-force child pole when that pole supplies another team's consumer without invalidating the parent inside its raised-build callback."
+    },
+    {
+      "id": "security.offline-invulnerability-roundtrip",
+      "profile": "base",
+      "runner": "mod-fixture",
+      "status": "implemented",
+      "fixture": "offline-security",
+      "pass_marker": "SCEATORIO_OFFLINE_PASS",
+      "requirement": "A real 2.1.12 entity takes damage online, becomes unbreakable offline, regains its exact prior destructible state on return, and preserves a preexisting false state."
+    },
+    {
+      "id": "security.offline-transition-overhead",
+      "profile": "base",
+      "runner": "mod-fixture",
+      "status": "implemented",
+      "fixture": "offline-security-performance",
+      "pass_marker": "SCEATORIO_OFFLINE_PERFORMANCE_PASS",
+      "requirement": "An exact Factorio 2.1.12 synthetic Nauvis base with 10,000 registered durable entities profiles immediate protect/unprotect transitions, verifies all states synchronously, restores 1,000 preexisting false states exactly, survives save/reload, and statically proves the transition walks its force bucket without an O(N) registration snapshot."
+    },
+    {
+      "id": "evolution.team-surface-attribution",
+      "profile": "base",
+      "runner": "mod-fixture",
+      "status": "implemented",
+      "fixture": "evolution",
+      "pass_marker": "SCEATORIO_EVOLUTION_PASS",
+      "requirement": "Independent paired-enemy ledgers attribute own worm/spawner kills per team and surface; gross pollution input alone changes no ledger, while actual unit-spawner output advances every existing team ledger on that surface by the same exact delta and leaves another surface unchanged; connected-time diagnostics continue while evolution is disabled without raw backcharge; late-team, freeze/re-enable, statistics-reset, and save/reload baselines never back-charge; and shared vanilla evolution remains disabled."
+    },
+    {
+      "id": "robot.production-pause-roundtrip",
+      "profile": "base",
+      "runner": "mod-fixture",
+      "status": "implemented",
+      "fixture": "robot-policy",
+      "pass_marker": "SCEATORIO_ROBOT_POLICY_PASS",
+      "requirement": "Two split fixed networks' logistic totals aggregate force-wide; enforcement pauses only matching logistic-robot recipes, preserves inputs/progress and exact prior script-disabled state through cloning/reload, and never moves robot items."
     },
     {
       "id": "load.space-age.required-server-mods",
@@ -171,44 +221,66 @@
     {
       "id": "planet.first-arrival-per-force",
       "profile": "space-age",
-      "runner": "integration",
-      "status": "planned",
-      "requirement": "The first team arrival creates exactly one tracked spawn per force and supported planet surface; later teammates reuse it."
+      "runner": "mod-fixture",
+      "status": "implemented",
+      "fixture": "space-age-planets",
+      "pass_marker": "SCEATORIO_PLANET_PASS",
+      "requirement": "The no-player core reservation path creates one stable spawn per force on all five built-in planets, keeps two teams separated at the fixture's configured 128-tile minimum, reassigns a default Gleba hostile in an already-generated candidate area to a paired enemy without touching another team's hostile, and survives reload."
     },
     {
       "id": "planet.exclude-platforms",
       "profile": "space-age",
-      "runner": "integration",
-      "status": "planned",
-      "requirement": "Space-platform surfaces never receive terrestrial spawn generation or terrain mutation."
+      "runner": "mod-fixture",
+      "status": "implemented",
+      "fixture": "space-age-planets",
+      "pass_marker": "SCEATORIO_PLANET_PASS",
+      "requirement": "A real Space Age platform surface is rejected by the development-gated core reservation API before terrestrial state is allocated."
     },
     {
       "id": "planet.safe-profiles",
       "profile": "space-age",
-      "runner": "integration",
+      "runner": "mod-fixture",
+      "status": "implemented",
+      "fixture": "space-age-planets",
+      "pass_marker": "SCEATORIO_PLANET_PASS",
+      "requirement": "Nauvis, Vulcanus, Fulgora, Gleba, and Aquilo preserve sampled native tiles, resources, cliffs, and decoratives while core spawn reservations finalize."
+    },
+    {
+      "id": "planet.rider-and-cargo-flow",
+      "profile": "space-age",
+      "runner": "manual-test-menu",
       "status": "planned",
-      "requirement": "Nauvis, Vulcanus, Fulgora, Gleba, and Aquilo use valid planet-specific terrain, resources, and enemy safety behavior."
+      "requirement": "A real client exercises physical rider arrival, remote-view exclusion, cargo-pod hold readback/fallback, and visible routing through the production-off administrator test menu."
     },
     {
       "id": "robot.count-by-network-and-force",
       "profile": "space-age",
       "runner": "integration",
       "status": "planned",
-      "requirement": "Logistic and construction robots are counted independently per network, surface-force, and force."
+      "requirement": "Extend the proven same-surface split-network logistic aggregation to independent construction totals and aggregation across multiple surfaces and a Space Age platform."
     },
     {
-      "id": "robot.no-silent-loss",
+      "id": "robot.production-state-space-age",
       "profile": "space-age",
       "runner": "integration",
       "status": "planned",
-      "requirement": "Cap enforcement never destroys robots or carried items and exposes every held robot for recovery."
+      "requirement": "On real Space Age terrestrial and platform lifecycle events, production-only enforcement preserves non-normal quality, inputs, progress, and prior disabled state while never moving existing robots."
     },
     {
       "id": "robot.cap-overhead",
+      "profile": "base",
+      "runner": "mod-fixture",
+      "status": "implemented",
+      "fixture": "robot-policy-performance",
+      "pass_marker": "SCEATORIO_ROBOT_PERFORMANCE_PASS",
+      "requirement": "A synthetic exact-2.1.12 workload drives 64 fixed networks and 1,024 candidate assemblers across the real 500 logistic/5,000 construction thresholds, measures bounded stop/resume latency, leaves non-robot recipes running, and benchmarks the enforced checkpoint without materializing robot arrays."
+    },
+    {
+      "id": "robot.active-megabase-overhead",
       "profile": "space-age",
       "runner": "benchmark",
       "status": "planned",
-      "requirement": "Cap monitoring is benchmarked disabled, warning-only, and enforced across controlled robot and network counts."
+      "requirement": "A real Space Age megabase benchmark compares disabled, warning-only, and enforced modes under sustained delivery, construction, and charging congestion across multiple force/surface shapes."
     },
     {
       "id": "engine.baseline",

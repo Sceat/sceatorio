@@ -1,20 +1,42 @@
-require('src.utils.msg')
+local State = require("src.core.state")
+local Teams = require("src.game.teams")
 
-function forwardMsg(e)
-	local player = game.players[e.player_index]
-	local msg = e.message
-	for _,force in pairs(game.forces) do
-		if (force ~= nil) then
-			if ((force.name ~= enemy) and (force.name ~= neutral) and (force.name ~= player) and (force ~= player.force)) then
-				local c = player.color
-				force.print(player.name..": "..msg, {r=c.r,g=c.g,b=c.b,a=1})
-			end
-		end
-	end
+local Chat = {}
+
+function Chat.forward(event)
+  -- Dedicated-server console chat has no player index and is already server-wide.
+  if not event.player_index then return end
+  local player = game.players[event.player_index]
+  if not (player and player.valid) then return end
+  local color = {r = player.color.r, g = player.color.g, b = player.color.b, a = 1}
+  local message = player.name .. ": " .. event.message
+
+  local delivered = {}
+  for _, record in pairs(State.get().teams_by_id) do
+    local force = Teams.get_force(record)
+    if force and force.index ~= player.force.index and not delivered[force.index] then
+      force.print(message, color)
+      delivered[force.index] = true
+    end
+  end
+  local lobby = game.forces.lobby
+  if lobby and lobby.index ~= player.force.index then
+    lobby.print(message, color)
+  end
 end
 
-function onSearchStart(e)
-	callOnPlayer(function(p)
-		p.print{"player-started-research",e.research.force.name, e.research.localised_name}
-	end)
+function Chat.on_research_started(event)
+  local research = event.research
+  if not (research and research.valid and research.force and research.force.valid) then return end
+  local record = Teams.get_by_force(research.force)
+  local starter = record and record.display_name or research.force.name
+  for _, player in pairs(game.connected_players) do
+    player.print({
+      "player-started-research",
+      research.localised_name,
+      starter
+    })
+  end
 end
+
+return Chat

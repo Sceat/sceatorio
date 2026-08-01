@@ -1,0 +1,7 @@
+{
+  "name": "Sceatorio isolated AI gateway E2E",
+  "description": "Disposable local integration test",
+  "visibility": {"public": false, "lan": false},
+  "require_user_verification": false,
+  "auto_pause": false
+}

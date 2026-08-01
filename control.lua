@@ -1,171 +1,304 @@
-require("src.game.offlineSecurity")
-require("src.game.chat")
-require("src.game.spawns")
-require("src.game.evo")
-require("src.game.radars")
-require("src.game.playerList")
+local State = require("src.core.state")
+local Teams = require("src.game.teams")
+local Spawns = require("src.game.spawns")
+local Evolution = require("src.game.evo")
+local Chat = require("src.game.chat")
+local DeathMessage = require("src.game.deathMessage")
+local Radars = require("src.game.radars")
+local PlayerList = require("src.game.playerList")
+local Security = require("src.game.security")
+local OfflineSecurity = require("src.game.offlineSecurity")
+local PlanetSpawns = require("src.game.planetSpawns")
+local RobotPolicy = require("src.game.robotPolicy")
+local TestMenu = require("src.game.testMenu")
+local AiGateway = require("src.game.aiGateway")
+
 require("src.game.admin")
 
+remote.add_interface("sceatorio_teams", {
+  register_force = function(force_name, owner_player_index, display_name)
+    local force = type(force_name) == "string" and game.forces[force_name] or nil
+    local already_registered = force and Teams.get_by_force(force) ~= nil
+    local record, reason = Teams.register_force(force, owner_player_index, display_name)
+    if not record then return {ok = false, error = reason} end
+    if not already_registered then
+      Radars.synchronize_team_charts(Teams.get_force(record))
+    end
+    return {
+      ok = true,
+      id = record.id,
+      force_name = record.force_name,
+      enemy_force_name = record.enemy_force_name
+    }
+  end,
+  chart_status = function()
+    return Radars.status()
+  end
+})
+
+remote.add_interface("sceatorio_radars", {
+  share_chunk = function(force_name, surface_identifier, chunk_position)
+    return Radars.share_chunk(force_name, surface_identifier, chunk_position)
+  end
+})
+
+local function initialize_common()
+  Spawns.configure_freeplay()
+  State.initialize()
+  Teams.initialize()
+  Radars.initialize()
+  Evolution.configure_vanilla()
+  Evolution.sync_connected(game.tick)
+  Security.initialize()
+  OfflineSecurity.initialize()
+  PlanetSpawns.initialize()
+  RobotPolicy.initialize()
+  TestMenu.initialize()
+  PlayerList.initialize()
+  AiGateway.initialize()
+end
+
 script.on_init(function()
-	onInit()
+  initialize_common()
+  Spawns.initialize_new_game()
 end)
 
-script.on_event(defines.events.on_chunk_generated, function(e)
-	onChunkGen(e)
+script.on_configuration_changed(function()
+  initialize_common()
+  Spawns.on_configuration_changed()
 end)
 
-unit_names = {
-	["behemoth-biter"] = "a Gigantic green Biter",
-	["behemoth-spitter"] = "a Gigantic green Spitter",
-	["big-biter"] = "the Great blue Biter",
-	["big-spitter"] = "the Great blue Spitter",
-	["medium-biter"] = "an Average Biter",
-	["medium-spitter"] = "an Average Spitter",
-	["small-biter"] = "a ridiculous insect",
-	["small-spitter"] = "a ridiculous spitting insect"
-}
+script.on_load(OfflineSecurity.on_load)
 
-script.on_event(defines.events.on_player_died, function(e)
-	local player = game.players[e.player_index]
-	if(e.cause ~= nil) then
-		local unit_name = unit_names[e.cause.name]
-		if(unit_name ~= nil) then
-			say(player.name.." was murdered by "..unit_name)
-		else
-			say(player.name.." has been wiped out from this planet")
-		end
-	else
-		say(player.name.."'s corpse was reduced to atoms.. rip")
-	end
+script.on_event(defines.events.on_chunk_generated, Spawns.on_chunk_generated)
+script.on_event(defines.events.on_biter_base_built, Spawns.on_biter_base_built)
+script.on_event(defines.events.on_build_base_arrived, Spawns.on_build_base_arrived)
+script.on_event(defines.events.on_player_created, function(event)
+  Spawns.on_player_created(event)
+  PlayerList.on_player_created(event)
+end)
+script.on_event(defines.events.on_player_died, DeathMessage.on_player_died)
+
+script.on_event(defines.events.on_entity_died, function(event)
+  Evolution.on_entity_died(event)
+  RobotPolicy.on_entity_removed(event)
+  OfflineSecurity.on_entity_removed(event)
+  AiGateway.on_entity_removed(event)
 end)
 
-script.on_event(defines.events.on_player_left_game, function(e)
-	protectPlayer(e)
+script.on_event(defines.events.on_player_left_game, function(event)
+  AiGateway.on_player_left(event)
+  Evolution.sync_connected(event.tick)
+  Spawns.on_player_left(event)
+  OfflineSecurity.on_player_left(event)
+  PlayerList.on_player_left(event)
 end)
 
-script.on_event(defines.events.on_player_joined_game, function(e)
-	unProtectPlayer(e)
-	local player = game.players[e.player_index]
-	create_container(player)
-	player.force.chart(player.surface,{{x = -200, y = -200}, {x = 200, y = 200}})
-	if(player.force.name == 'lobby') then
-		global.scheduledGuiShow[e.player_index] = e.tick + 600
-	end
+script.on_event(defines.events.on_player_joined_game, function(event)
+  local player = game.players[event.player_index]
+  if not (player and player.valid) then return end
+  OfflineSecurity.on_player_joined(event)
+  PlayerList.on_player_joined(event)
+  local character = player.character
+  if character and character.valid then
+    Radars.chart(player.force, character.surface, {
+      {character.position.x - 200, character.position.y - 200},
+      {character.position.x + 200, character.position.y + 200}
+    })
+  end
+  Spawns.on_player_joined(event)
+  PlanetSpawns.on_player_joined(event)
+  RobotPolicy.on_player_joined(event)
+  TestMenu.on_player_joined(event)
+  Evolution.sync_connected(event.tick)
+  AiGateway.on_player_joined(event)
 end)
 
--- preventing biters from another team from expending to another team territory
-script.on_event(defines.events.on_biter_base_built, function(e)
-	local entity = e.entity
-	if(entity == nil) then return end
-	local nearest = findNearestForce(entity.position)
-	if(nearest.force == nil) then return end
-	if(entity.force.name ~= ('enemy='..nearest.force.name)) then entity.destroy() end
+script.on_event(defines.events.on_player_changed_force, function(event)
+  Teams.on_player_changed_force(event)
+  Evolution.sync_connected(event.tick)
+  OfflineSecurity.on_player_changed_force(event)
+  Spawns.on_player_changed_force(event)
+  RobotPolicy.on_player_joined(event)
+  TestMenu.on_player_changed_force(event)
+  PlayerList.on_player_changed(event)
+  AiGateway.on_player_changed_force(event)
 end)
 
-script.on_event(defines.events.on_build_base_arrived, function(e)
-	local position = nil
-	local force = nil
-	if e.group ~= nil then
-		position = e.group.position
-		force = e.group.force
-	elseif e.unit ~= nil then
-		position = e.unit.position
-		force = e.unit.force
-	else return end
-	local nearest = findNearestForce(position)
-	if(nearest.force == nil) then return end
-	if(force.name ~= ('enemy='..nearest.force.name)) then
-		if(e.unit ~= nil) then e.unit.destroy()
-		else
-			for _,entity in ipairs(e.group) do
-				entity.destroy()
-			end
-		end
-	end
+script.on_event(defines.events.on_player_changed_surface, function(event)
+  Evolution.sync_connected(event.tick)
+  PlanetSpawns.on_player_changed_surface(event)
+  PlayerList.on_player_changed(event)
+  AiGateway.on_player_changed_surface(event)
+end)
+script.on_event(defines.events.on_player_respawned, function(event)
+  PlanetSpawns.on_player_respawned(event)
+  PlayerList.on_player_changed(event)
+end)
+if defines.events.on_player_removed then
+  script.on_event(defines.events.on_player_removed, function(event)
+    Teams.on_player_removed(event)
+    PlayerList.on_player_removed(event)
+    AiGateway.on_player_removed(event)
+  end)
+end
+
+local display_events = {}
+for _, event_id in pairs({
+  defines.events.on_player_display_density_scale_changed,
+  defines.events.on_player_display_resolution_changed,
+  defines.events.on_player_display_scale_changed
+}) do
+  if event_id then display_events[#display_events + 1] = event_id end
+end
+if #display_events > 0 then
+  script.on_event(display_events, PlayerList.on_display_changed)
+end
+if defines.events.on_cargo_pod_finished_descending then
+  script.on_event(
+    defines.events.on_cargo_pod_finished_descending,
+    PlanetSpawns.on_cargo_pod_finished_descending
+  )
+end
+if defines.events.on_cargo_pod_started_ascending then
+  script.on_event(
+    defines.events.on_cargo_pod_started_ascending,
+    PlanetSpawns.on_cargo_pod_started_ascending
+  )
+end
+
+script.on_event(defines.events.on_console_chat, Chat.forward)
+script.on_event(defines.events.on_research_started, function(event)
+  Chat.on_research_started(event)
+  AiGateway.on_research_started(event)
+end)
+script.on_event(defines.events.on_research_finished, AiGateway.on_research_finished)
+script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
+  Evolution.on_setting_changed(event)
+  OfflineSecurity.on_setting_changed(event)
+  PlanetSpawns.on_setting_changed(event)
+  RobotPolicy.on_setting_changed(event)
+  TestMenu.on_setting_changed(event)
+  AiGateway.on_setting_changed(event)
+end)
+script.on_event(defines.events.on_surface_created, Security.on_surface_created)
+script.on_event(defines.events.on_force_created, Teams.on_force_created)
+script.on_event(defines.events.on_chunk_charted, Radars.on_chunk_charted)
+script.on_event(defines.events.on_surface_deleted, function(event)
+  Security.on_surface_deleted(event)
+  PlanetSpawns.on_surface_deleted(event)
+  RobotPolicy.on_surface_deleted(event)
+  OfflineSecurity.on_surface_deleted(event)
+  Spawns.on_surface_deleted(event)
+  Radars.on_surface_deleted(event)
+  Teams.on_surface_deleted(event)
+  AiGateway.on_surface_deleted(event)
+end)
+script.on_event(defines.events.on_forces_merged, function(event)
+  Teams.on_forces_merged(event)
+  OfflineSecurity.on_forces_merged(event)
+  Spawns.on_forces_merged(event)
+  PlanetSpawns.on_forces_merged(event)
+  RobotPolicy.on_forces_merged(event)
+  AiGateway.on_forces_merged(event)
 end)
 
-script.on_event(defines.events.on_player_created, function(e)
-	onCreate(e)
+script.on_event(defines.events.on_built_entity, function(event)
+  Security.on_player_built(event)
+  RobotPolicy.on_entity_built(event)
+  OfflineSecurity.on_entity_built(event)
+  AiGateway.on_entity_built(event)
+end)
+script.on_event(defines.events.on_robot_built_entity, function(event)
+  Security.on_robot_built(event)
+  RobotPolicy.on_entity_built(event)
+  OfflineSecurity.on_entity_built(event)
+  AiGateway.on_entity_built(event)
+end)
+script.on_event({
+  defines.events.script_raised_built,
+  defines.events.script_raised_revive
+}, function(event)
+  Security.on_script_built(event)
+  RobotPolicy.on_entity_built(event)
+  OfflineSecurity.on_entity_built(event)
+  AiGateway.on_entity_built(event)
+end)
+script.on_event(defines.events.on_entity_cloned, function(event)
+  Security.on_entity_cloned(event)
+  RobotPolicy.on_entity_cloned(event)
+  OfflineSecurity.on_entity_cloned(event)
+  AiGateway.on_entity_built(event)
+end)
+script.on_event({
+  defines.events.on_player_mined_entity,
+  defines.events.on_robot_mined_entity,
+  defines.events.script_raised_destroy
+}, function(event)
+  RobotPolicy.on_entity_removed(event)
+  OfflineSecurity.on_entity_removed(event)
+  AiGateway.on_entity_removed(event)
+end)
+if defines.events.on_space_platform_built_entity then
+  script.on_event(defines.events.on_space_platform_built_entity, function(event)
+    RobotPolicy.on_entity_built(event)
+    OfflineSecurity.on_entity_built(event)
+    AiGateway.on_entity_built(event)
+  end)
+end
+if defines.events.on_space_platform_mined_entity then
+  script.on_event(defines.events.on_space_platform_mined_entity, function(event)
+    RobotPolicy.on_entity_removed(event)
+    OfflineSecurity.on_entity_removed(event)
+    AiGateway.on_entity_removed(event)
+  end)
+end
+script.on_event(defines.events.on_entity_settings_pasted, RobotPolicy.on_entity_settings_pasted)
+script.on_event(defines.events.on_object_destroyed, OfflineSecurity.on_object_destroyed)
+if defines.events.on_udp_packet_received then
+  script.on_event(defines.events.on_udp_packet_received, AiGateway.on_udp_packet_received)
+end
+script.on_event(defines.events.on_gui_opened, AiGateway.on_gui_opened)
+script.on_event(defines.events.on_gui_closed, AiGateway.on_gui_closed)
+script.on_event(
+  defines.events.on_selected_entity_changed,
+  Security.on_selected_entity_changed
+)
+script.on_event(
+  defines.events.on_player_cursor_stack_changed,
+  Security.on_player_cursor_stack_changed
+)
+script.on_nth_tick(60, function(event)
+  Spawns.tick(event)
+  Evolution.sync_connected(event.tick)
+  OfflineSecurity.tick(event)
+  PlanetSpawns.tick(event)
+  RobotPolicy.tick(event)
 end)
 
--- script.on_event(defines.events.on_selected_entity_changed, function(e)
--- 	if e.last_entity ~= nil then game.surfaces.nauvis.print(e.last_entity.force.name) end
--- end
--- )
+script.on_nth_tick(30, Security.tick)
 
-script.on_event(defines.events.on_console_chat, function(e)
-    forwardMsg(e)
+script.on_event(defines.events.on_tick, function(event)
+  Security.on_tick(event)
+  OfflineSecurity.on_tick(event)
+  RobotPolicy.on_tick(event)
+  Radars.tick(event)
+  AiGateway.poll(event)
 end)
 
-script.on_event(defines.events.on_research_started, function(e)
-	onSearchStart(e)
-end)
-
-script.on_nth_tick(60*10, function(e)
-	chart_radars_and_players()
-	for _,player in pairs(game.connected_players) do
-		tick_player_list(player)
-	end
-end)
-
-script.on_nth_tick(60*60, function(e)
-	local forces = {}
-	for _,player in pairs(game.connected_players) do
-		if(player.force.name ~= 'lobby') and (player.force.name ~= 'player') then
-			forces[player.force] = true
-		end
-	end
-	for force in pairs(forces) do
-		evolveTeamEnemies(force)
-	end
-end)
-
-script.on_nth_tick(61, function(e)
-	-- If no players are scheduled, don't bother checking
-	if not global.scheduledGuiShow then return end
-
-	-- Check each scheduled player to see if it's time to show their GUI
-	for player_index, tick_to_show in pairs(global.scheduledGuiShow) do
-			if e.tick >= tick_to_show then
-					-- Time to show the GUI for this player!
-					local player = game.players[player_index]
-					-- Check if the player is valid before trying to show the GUI
-					if player and player.valid then
-							showSpawnGui(player)
-					end
-					-- Clear the scheduled time regardless of whether the player was valid
-					global.scheduledGuiShow[player_index] = nil
-			end
-	end
-end)
-
-script.on_nth_tick(60, function(e)
-	if global.tp ~= nil then
-		for _,t in pairs(global.tp) do
-			if(t.player == nil) or (t.player.connected == false) then
-				global.tp[_]=nil
-			else
-				t.time = t.time-1
-				t.time_chunk = t.time_chunk-1
-				if(t.time_chunk < 1) then
-					spawnAlone(t.player, t.spawn)
-					t.time_chunk = 10
-				end
-				if(t.time < 1 and t.player.connected) then
-					say('teleporting '..(t.player.name)..' to his spawn')
-					t.player.teleport(t.spawn,game.surfaces.nauvis)
-					global.tp[_]=nil
-				end
-			end
-		end
-	end
-end)
+script.on_nth_tick(10 * 60, PlayerList.tick)
 
 script.on_event(defines.events.on_gui_click, function(event)
-	if not (event and event.element and event.element.valid) then return end
-	if(event.element.name == 'toggle_players') then
-		toggle_player_list(game.players[event.player_index])
-	else
-		onButtonClick(event)
-	end
+  if not (event.element and event.element.valid) then return end
+  if PlayerList.on_gui_click(event) then
+    return
+  elseif TestMenu.on_gui_click(event) then
+    return
+  elseif AiGateway.on_gui_click(event) then
+    return
+  elseif RobotPolicy.on_gui_click(event) then
+    return
+  else
+    Spawns.on_gui_click(event)
+  end
 end)

@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "target": "Factorio 2.1.12, with Space Age optional",
+  "implemented": [
+    {
+      "id": "team-spawns",
+      "label": "Separate teams",
+      "statement": "A new player can create an independent force and distant starting area, or request an owner-approved join to an existing team.",
+      "portal_phrase": "Create a separate team and distant starting area, or request an owner-approved join to a friend.",
+      "evidence": [
+        {"path": "src/game/teams.lua", "contains": "function Teams.create"},
+        {"path": "src/game/spawns.lua", "contains": "local function accept_join"}
+      ]
+    },
+    {
+      "id": "team-evolution",
+      "label": "Team evolution",
+      "statement": "Each team has a paired enemy force and an independent raw evolution ledger on every recorded surface; connected time, that team's worm/spawner kills, and new pollution consumed by unit spawners on that surface feed it.",
+      "portal_phrase": "Enemy evolution is tracked per team and per surface from connected time, own worm/spawner kills, and new pollution consumed by nests on that surface.",
+      "evidence": [
+        {"path": "src/game/evo.lua", "contains": "function Evolution.on_entity_died"},
+        {"path": "src/game/evo.lua", "contains": "statistics.output_counts"},
+        {"path": "src/game/evo.lua", "contains": "prototype.type == \"unit-spawner\""},
+        {"path": "src/game/teams.lua", "contains": "evolution = initial_evolution"}
+      ]
+    },
+    {
+      "id": "planet-spawns",
+      "label": "Space Age planets",
+      "statement": "After a team's first physical arrival, one stable separated spawn is generated asynchronously on each real planet while native terrain and progression stay intact.",
+      "portal_phrase": "With Space Age enabled, each team receives one stable separated spawn after physically reaching a new planet; platforms and remote view are excluded.",
+      "evidence": [
+        {"path": "src/game/planetSpawns.lua", "contains": "function PlanetSpawns.request_spawn"},
+        {"path": "src/game/planetSpawns.lua", "contains": "preserve_native = true"}
+      ]
+    },
+    {
+      "id": "electricity-isolation",
+      "label": "Electricity isolation",
+      "statement": "Direct cross-team copper links are removed, conflicting player/robot placements are rejected and refunded, script-raised conflicts fail closed after their creator resumes, and sharing requires mutual team-owner opt-in.",
+      "portal_phrase": "Electric networks are isolated by default; deliberate sharing requires both team owners to opt in.",
+      "evidence": [
+        {"path": "src/game/security.lua", "contains": "local function sanitize_connector"},
+        {"path": "src/game/security.lua", "contains": "commands.add_command("}
+      ]
+    },
+    {
+      "id": "offline-preservation",
+      "label": "Immediate offline preservation",
+      "statement": "When the last human leaves a team, tracked team-owned entities immediately become unbreakable; the first teammate back restores each exact prior destructible state.",
+      "portal_phrase": "Offline protection activates immediately when the last human leaves a team: tracked team-owned entities become unbreakable, then the first teammate back restores each exact prior destructible state.",
+      "evidence": [
+        {"path": "src/game/offlineSecurity.lua", "contains": "destructible"},
+        {"path": "src/game/offlineSecurity.lua", "contains": "on_entity_built"}
+      ]
+    },
+    {
+      "id": "shared-chart-discovery",
+      "label": "Shared radar discovery",
+      "statement": "A chunk charted by one Sceatorio human team is copied to every other Sceatorio human team without merging forces, economies, evolution, or electric networks.",
+      "portal_phrase": "Radar and chart discovery is shared globally among all registered Sceatorio human teams, without merging their forces, economies, evolution, or electric networks.",
+      "evidence": [
+        {"path": "src/game/radars.lua", "contains": "copy_chart"},
+        {"path": "control.lua", "contains": "on_chunk_charted"}
+      ]
+    },
+    {
+      "id": "robot-policy",
+      "label": "Robot policy",
+      "statement": "Per-team logistic and construction caps aggregate every fixed network and surface; policy can be disabled, warning-only, or enforced by pausing only registered crafting machines whose current recipe produces a capped robot class, while preserving each machine's prior script-disabled state.",
+      "portal_phrase": "Configurable per-team robot limits aggregate all fixed networks and surfaces; enforcement pauses only crafting machines currently producing the capped robot class, and never moves, deletes, or hides robot items.",
+      "evidence": [
+        {"path": "src/game/robotPolicy.lua", "contains": "local function force_summary"},
+        {"path": "src/game/robotPolicy.lua", "contains": "local function apply_machine_policy"},
+        {"path": "src/game/robotPolicy.lua", "contains": "sceatorio-robot-status"}
+      ]
+    },
+    {
+      "id": "ai-assistance",
+      "label": "Optional AI Assistance",
+      "statement": "AI Assistance is off by default and ships as one automation-science technology, a powered Uplink, per-player opt-in, one-time pairing and revocation, and exactly 24 scope-checked MCP tools.",
+      "portal_phrase": "Optional AI Assistance is off by default and uses one automation-science technology, a powered Uplink, per-player opt-in, one-time pairing codes, and 24 scoped MCP tools.",
+      "evidence": [
+        {"path": "data.lua", "contains": "name = \"sceatorio-ai-assistance\""},
+        {"path": "src/game/aiGateway.lua", "contains": "local function handle_pairing_exchange"},
+        {"path": "mcp/src/catalog/tools.ts", "contains": "export const V1_TOOL_DEFINITIONS"},
+        {"path": "tests/e2e/ai-gateway.mjs", "contains": "SCEATORIO_AI_E2E_PASS"}
+      ]
+    }
+  ],
+  "limitations": [
+    {
+      "id": "surface-global-pollution",
+      "label": "Surface-global nest consumption",
+      "statement": "Factorio exposes cumulative pollution output statistics per surface rather than per force. Sceatorio sums only keys whose runtime entity prototype is a unit spawner, so every recorded team receives the same newly consumed delta; no proximity or triangulation is used. Trees and scrubbers can reduce future evolution by intercepting pollution before nests, while evolution already credited never decreases.",
+      "portal_phrase": "Pollution evolution follows surface-global nest consumption rather than gross factory emissions",
+      "evidence": [
+        {"path": "src/game/evo.lua", "contains": "local function sample_pollution"},
+        {"path": "src/game/evo.lua", "contains": "statistics.output_counts"},
+        {"path": "src/game/evolution_math.lua", "contains": "pollution_cursor"}
+      ]
+    },
+    {
+      "id": "fresh-world-registration",
+      "label": "Fresh 2.0 worlds for offline protection",
+      "statement": "Normal save/load is supported, but offline entity registration is event-driven for fresh 2.0 worlds; installing it onto an existing untracked world has no retrofit guarantee.",
+      "portal_phrase": "Normal save/load is supported, but offline entity registration targets fresh 2.0 worlds; installing it onto an existing untracked world has no retrofit guarantee.",
+      "evidence": [
+        {"path": "src/game/offlineSecurity.lua", "contains": "on_entity_built"}
+      ]
+    },
+    {
+      "id": "script-power-overlap",
+      "label": "Unannounced third-party entities",
+      "statement": "Script-raised builds and clones are checked after their creator resumes, and a bounded next-tick audit catches silent companion poles around every visible electric build. Factorio exposes no general creation event for unrelated entities silently created later by another mod, so exact third-party releases remain an operator-audited trust boundary.",
+      "portal_phrase": "A bounded next-tick audit catches silent companion poles around visible electric builds; unrelated entities created without any Factorio lifecycle event remain a trusted-mod boundary.",
+      "evidence": [
+        {"path": "src/game/security.lua", "contains": "local function audit_silent_child_poles"},
+        {"path": "tests/fixtures/security/control.lua", "contains": "SILENT_CHILD_POLE_POSITION"}
+      ]
+    },
+    {
+      "id": "accepted-implicit-power-overlap",
+      "label": "Previously accepted implicit power",
+      "statement": "Revoking mutual intent makes direct cross-team copper unauthorized and prevents new player/robot implicit overlaps, but an implicit overlap accepted while sharing was active has no direct wire or exact delayed refund and must be relocated manually.",
+      "portal_phrase": "Revoking mutual power sharing immediately makes direct cross-team copper unauthorized and prevents new player/robot implicit overlaps, but an implicit overlap accepted while sharing was active must be relocated manually.",
+      "evidence": [
+        {"path": "src/game/security.lua", "contains": "local function power_sharing_allowed"},
+        {"path": "src/game/security.lua", "contains": "local function implicit_conflict"}
+      ]
+    },
+    {
+      "id": "ai-safe-boundary",
+      "label": "AI control and transport boundary",
+      "statement": "No MCP tool moves, mines, crafts, fights, teleports, places entities, runs arbitrary Lua/RCON, or changes generic factory state; the local path requires loopback Lua UDP, one pairing code crosses it once, and bearer credentials never enter UDP or the save.",
+      "portal_phrase": "No MCP tool controls the character or places entities, and bearer credentials never enter Factorio UDP or the save; the local bridge requires Factorio's loopback Lua UDP flag.",
+      "evidence": [
+        {"path": "mcp/src/catalog/tools.ts", "contains": "write_control_port"},
+        {"path": "src/game/aiGateway.lua", "contains": "helpers.recv_udp"},
+        {"path": "docs/claude-mcp-architecture-v1.md", "contains": "The human remains the character"}
+      ]
+    },
+    {
+      "id": "production-ai-endpoint",
+      "label": "No public AI endpoint",
+      "statement": "The tested release path is a local stdio MCP sidecar over loopback UDP; an internet-facing Streamable HTTP/OAuth deployment is intentionally not shipped by this repository.",
+      "portal_phrase": "The tested AI path is local stdio over loopback UDP; this mod does not expose a public AI or Factorio endpoint.",
+      "evidence": [
+        {"path": "mcp/README.md", "contains": "Local stdio and pairing"}
+      ]
+    },
+    {
+      "id": "exact-runtime",
+      "label": "Exact Factorio target",
+      "statement": "The 2.0.0 development line targets the Factorio 2.1.12 runtime and API rather than the older 1.1 Mod Portal line.",
+      "portal_phrase": "This development line requires Factorio 2.1.12.",
+      "evidence": [
+        {"path": "info.json", "contains": "base >= 2.1.12"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": 1,
+  "audited_at": "2026-08-01",
+  "status": "audit-proposal",
+  "production_lock": false,
+  "target": {
+    "factorio_version": "2.1.12",
+    "factorio_build": 87038,
+    "channel": "experimental",
+    "space_age": true
+  },
+  "built_in_closure": [
+    {
+      "name": "base",
+      "version": "2.1.12",
+      "relationship": "required"
+    },
+    {
+      "name": "elevated-rails",
+      "version": "2.1.12",
+      "relationship": "required-by-space-age"
+    },
+    {
+      "name": "recycler",
+      "version": "2.1.12",
+      "relationship": "required-by-space-age"
+    },
+    {
+      "name": "quality",
+      "version": "2.1.12",
+      "relationship": "recommended-by-space-age-and-enabled-by-server"
+    },
+    {
+      "name": "space-age",
+      "version": "2.1.12",
+      "relationship": "required-by-nuclear-thruster"
+    }
+  ],
+  "approved_mods": [
+    {
+      "name": "Aircraft-space-age",
+      "title": "Aircraft",
+      "version": "2.3.5",
+      "file_name": "Aircraft-space-age_2.3.5.zip",
+      "factorio_version": "2.1",
+      "released_at": "2026-06-23T11:35:53.182000Z",
+      "portal_url": "https://mods.factorio.com/mod/Aircraft-space-age",
+      "download_url": "/download/Aircraft-space-age/6a3a6f999245f1b9ed0cd3ea",
+      "sha1": "e39bd00da37b8b929e4d026206d2eb0a65b7936f",
+      "sha256": "41e198b1033a99bc168a2775a3594dc1286961d52ce088d35d427017e7ee9f49",
+      "license": {
+        "portal": "MIT",
+        "source_repository": "MIT"
+      },
+      "dependencies": {
+        "required": [
+          "base >= 2.1.7"
+        ],
+        "optional": [
+          "? planet-muluna >= 1.9.0",
+          "? AircraftRealism >= 2.0.2",
+          "? HelicopterRevival >= 0.3.0",
+          "? space-age >= 2.0.0",
+          "? bobplates >= 2.0.0",
+          "? bobelectronics >= 2.0.0",
+          "? boblibrary >= 2.0.0",
+          "? bobwarfare >= 2.0.0",
+          "? bobvehicleequipment >= 2.0.0"
+        ]
+      },
+      "source": {
+        "repository": "https://github.com/nicholasgower/Aircraft-Space-Age",
+        "tag": "v2.3.5",
+        "commit": "78374be77ff347819336bd479a209784dc345019",
+        "tree": "300be73b14c90667bcf17ecbbabaad4e9fad3898",
+        "release_asset_matches_portal_sha1": true
+      },
+      "deployment": {
+        "status": "approved-with-guardrails",
+        "enabled": true,
+        "recommended_startup_settings": {
+          "aircraft-change-vanilla-tech-tree": false,
+          "lock-surfaces-space-age": true
+        },
+        "known_blocker": null
+      },
+      "verification": {
+        "exact_portal_artifact_tested": true,
+        "factorio_2_1_12_base_create": "pass",
+        "factorio_2_1_12_space_age_create_and_600_ticks": "pass",
+        "combined_with_sceatorio_and_nuclear_thruster": "pass",
+        "dedicated_server_hosting": "pass"
+      },
+      "client_sync": "portal-exact-version"
+    }
+  ],
+  "blocked_candidates": [
+    {
+      "name": "nuclear-thruster",
+      "title": "Nuclear Thruster",
+      "version": "1.2.4",
+      "file_name": "nuclear-thruster_1.2.4.zip",
+      "factorio_version": "2.1",
+      "released_at": "2026-07-29T15:17:56.888000Z",
+      "portal_url": "https://mods.factorio.com/mod/nuclear-thruster",
+      "download_url": "/download/nuclear-thruster/6a6a19a4bf84e2fe914c9204",
+      "sha1": "992a527e8f96c3f2110cf80ea395e063268aff89",
+      "sha256": null,
+      "license": {
+        "portal": "GPL-3.0",
+        "source_repository": null,
+        "note": "The repository contains no LICENSE file even though the Portal declares GPLv3."
+      },
+      "dependencies": {
+        "required": [
+          "base >= 2.1",
+          "space-age >= 2.1"
+        ],
+        "optional": []
+      },
+      "source": {
+        "repository": "https://github.com/versuffer/factorio-mod-nuclear-thruster",
+        "tag": null,
+        "commit": "a6cdd9f7fde73b6efb2738e8cfb2ca63646c4b10",
+        "tree": "985b71d0ee9320a2586c9f773583b620fe0554a7",
+        "release_asset_matches_portal_sha1": null
+      },
+      "deployment": {
+        "status": "conditional",
+        "enabled": false,
+        "recommended_startup_settings": {
+          "enable-nuclear-thruster-fluid-box-symmetry": false,
+          "enable-nuclear-thruster-alternative-flame-graphics": false,
+          "enable-uranium-thruster-fuel-fuel-value-adjustment": false,
+          "enable-metallic-asteroid-uranium-extraction-uranium-ore-probability-adjustment": false,
+          "nuclear-thruster-full-storage-efficiency-percent": 97,
+          "nuclear-thruster-full-storage-fluid-usage-percent": 100,
+          "nuclear-thruster-storage-volume-units": 1000
+        },
+        "known_blocker": "Test the authenticated exact Portal ZIP and obtain upstream repository license clarity before enabling production or redistributing a fork."
+      },
+      "verification": {
+        "exact_portal_artifact_tested": false,
+        "source_commit_factorio_2_1_12_space_age_create_and_600_ticks": "pass",
+        "source_commit_without_quality": "pass",
+        "combined_with_sceatorio_and_aircraft": "pass",
+        "dedicated_server_hosting": "pass"
+      },
+      "client_sync": "portal-exact-version"
+    },
+    {
+      "name": "MushroomCloud2",
+      "title": "Mushroom Cloud 2",
+      "version": "2.1.34",
+      "file_name": "MushroomCloud2_2.1.34.zip",
+      "factorio_version": "2.1",
+      "released_at": "2026-07-31T11:49:26.703000Z",
+      "portal_url": "https://mods.factorio.com/mod/MushroomCloud2",
+      "download_url": "/download/MushroomCloud2/6a6c8bc67cac861bceee4160",
+      "sha1": "397f7d8bff86527347429be14a8036a0ea3f9d12",
+      "sha256": null,
+      "license": {
+        "portal": "MIT",
+        "source_repository": null,
+        "embedded_assets": "mixed-or-unclear",
+        "note": "The Portal description credits CC-BY 3.0, CC-BY-NC 3.0, and AudioBlocks-origin sounds; do not treat the complete archive as homogeneously MIT."
+      },
+      "dependencies": {
+        "required": [
+          "base >= 2.1.0"
+        ],
+        "optional": [
+          "? atomic-artillery",
+          "? AtomicArtillery2",
+          "? atomic-artillery-reborn",
+          "? atomicer-artillery",
+          "? Clowns-Nuclear",
+          "? Krastorio2",
+          "? Krastorio2-spaced-out",
+          "? Kux-OrbitalIonCannon",
+          "? maraxsis",
+          "? modmashsplinterboom_light_fork",
+          "? modmashsplinterexplosivewater",
+          "? PlutoniumEnergy",
+          "? RampantArsenalFork",
+          "? RealNukes",
+          "? RealNukes_Balanced",
+          "? SchallArtillery",
+          "? SimpleAtomicArtillery-S"
+        ],
+        "incompatible": [
+          "! StopgapNukes",
+          "! mushroom-cloud"
+        ]
+      },
+      "source": null,
+      "deployment": {
+        "status": "blocked-artifact-audit",
+        "enabled": false,
+        "recommended_startup_settings": null,
+        "known_blocker": "No source is published and unauthenticated Portal downloads redirect to login. Stage the exact SHA-1-verified ZIP, then complete load, multiplayer, detonation, radiation, save/load, and stress tests."
+      },
+      "verification": {
+        "exact_portal_artifact_tested": false,
+        "source_review": "blocked-no-source",
+        "runtime_review": "blocked-authenticated-portal-artifact-required"
+      },
+      "client_sync": "portal-exact-version"
+    },
+    {
+      "name": "aai-signal-transmission",
+      "title": "AAI Signal Transmission",
+      "version": "0.6.0",
+      "file_name": "aai-signal-transmission_0.6.0.zip",
+      "factorio_version": "2.1",
+      "released_at": "2026-06-24T08:33:06.351000Z",
+      "portal_url": "https://mods.factorio.com/mod/aai-signal-transmission",
+      "download_url": "/download/aai-signal-transmission/6a3b96422e6b3d3dc94666ef",
+      "sha1": "c6606a442a66d77eab8c8341a0e84a6c63b50197",
+      "sha256": null,
+      "license": {
+        "portal": "Limited Distribution Only Licence",
+        "source_repository": null,
+        "note": "Only the author's complete unmodified Portal package may be distributed under the stated conditions; private alterations may not be redistributed."
+      },
+      "dependencies": {
+        "required": [
+          "base >= 2.1.7"
+        ],
+        "optional": [
+          "? space-age >= 2.1.0"
+        ]
+      },
+      "source": null,
+      "deployment": {
+        "status": "blocked-artifact-audit",
+        "enabled": false,
+        "recommended_startup_settings": null,
+        "known_blocker": "No source is published and the authenticated exact Portal ZIP has not been staged. Verify two-force channel isolation, hidden electric entities, Space Age/platform behavior, save lifecycle, and active-channel performance before moving this entry into the active server lock."
+      },
+      "verification": {
+        "official_portal_metadata_verified": true,
+        "exact_portal_artifact_tested": false,
+        "source_review": "blocked-no-source",
+        "runtime_review": "blocked-authenticated-portal-artifact-required"
+      },
+      "client_sync": "portal-exact-version"
+    }
+  ]
+}

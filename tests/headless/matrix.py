@@ -17,7 +17,7 @@ def main() -> int:
     if len(sys.argv) < 3:
         raise SystemExit(
             "usage: matrix.py MATRIX "
-            "(version|profiles|mod-list|cases|fixtures|external-mods) [ARG ...]"
+            "(version|headless-env|profiles|mod-list|cases|fixtures|external-mods) [ARG ...]"
         )
 
     matrix = load_matrix(sys.argv[1])
@@ -25,6 +25,21 @@ def main() -> int:
 
     if command == "version":
         print(matrix["factorio"]["version"])
+        return 0
+
+    if command == "headless-env":
+        factorio = matrix["factorio"]
+        headless = factorio["headless"]
+        values = {
+            "FACTORIO_VERSION": factorio["version"],
+            "FACTORIO_HEADLESS_FILENAME": headless["filename"],
+            "FACTORIO_HEADLESS_URL": headless["url"],
+            "FACTORIO_HEADLESS_SHA256": headless["sha256"],
+        }
+        for name, value in values.items():
+            if not isinstance(value, str) or not value or "\n" in value or "\r" in value:
+                raise SystemExit(f"invalid single-line headless value: {name}")
+            print(f"{name}={value}")
         return 0
 
     if command == "profiles":
@@ -42,13 +57,15 @@ def main() -> int:
     if command == "mod-list":
         profile = sys.argv[3]
         mod_name = sys.argv[4]
-        external_mod_set = sys.argv[5] if len(sys.argv) > 5 else None
+        external_mod_set = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else None
+        extra_mods = sys.argv[6:]
         enabled = set(matrix["profiles"][profile]["enabled_built_in_mods"])
         mods = [
             {"name": name, "enabled": name in enabled}
             for name in matrix["factorio"]["built_in_mods"]
         ]
         mods.append({"name": mod_name, "enabled": True})
+        mods.extend({"name": name, "enabled": True} for name in extra_mods)
         if external_mod_set:
             mods.extend(
                 {"name": mod["name"], "enabled": True}
@@ -83,9 +100,10 @@ def main() -> int:
     if command == "fixtures":
         profile = sys.argv[3]
         selected = sys.argv[4] if len(sys.argv) > 4 else "all"
+        runner = sys.argv[5] if len(sys.argv) > 5 else "fixture"
         for case in matrix["cases"]:
             if (
-                case["runner"] == "fixture"
+                case["runner"] == runner
                 and case["profile"] == profile
                 and case["status"] == "implemented"
                 and (selected == "all" or case["fixture"] == selected)

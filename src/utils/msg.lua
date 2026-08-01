@@ -1,11 +1,13 @@
-function say(msg)
-	game.surfaces.nauvis.print("[sceatorio] "..msg)
+local Message = {}
+
+function Message.say(message)
+  game.print("[Sceatorio] " .. message)
 end
 
-function callOnPlayer(fn)
-	for _,p in pairs(game.players) do
-		if p.connected then
-			fn(p)
-		end
-	end
+function Message.for_connected(callback)
+  for _, player in pairs(game.connected_players) do
+    callback(player)
+  end
 end
+
+return Message

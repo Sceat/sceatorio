@@ -1,93 +1,113 @@
-require("src.game.spawns")
+local Teams = require("src.game.teams")
+local Spawns = require("src.game.spawns")
+local Message = require("src.utils.msg")
 
-commands.add_command('equalize_all', '', function(e)
-	if not game.players[e.player_index].admin then return end
-	say('equalizing entities')
-	for _,e in pairs(game.surfaces.nauvis.find_entities_filtered{type={"turret","unit-spawner"}}) do
-		local nearest = findNearestForce(e.position)
-		if(nearest.force == nil) then
-			say('no nearest force found for '..e.type..' at position '..e.position.x..','..e.position.y)
-		else
-			say('nearest force is '..nearest.force.name)
-			if e.force.name ~= ('enemy='..nearest.force.name) then
-				say(e.name.." from "..e.force.name.."'s clan is inside enemy="..nearest.force.name.."'s clan territory and has been destroyed")
-				e.destroy()
-			end
-		end
-	end
-end)
+local Admin = {}
 
-function delete_chunks_in_range(center, range)
-  for x=-range, range do
-    for y=-range, range do
-      local chunk_position = {x=center.x+x, y=center.y+y}
-      game.surfaces.nauvis.delete_chunk(chunk_position)
+local function command_player(event)
+  if not event.player_index then return nil, true end
+  local player = game.players[event.player_index]
+  return player, player and player.admin
+end
+
+local function delete_chunks_in_range(surface, center, range)
+  local center_chunk = {
+    x = math.floor(center.x / 32),
+    y = math.floor(center.y / 32)
+  }
+  for x = -range, range do
+    for y = -range, range do
+      surface.delete_chunk({x = center_chunk.x + x, y = center_chunk.y + y})
     end
   end
 end
 
-function eradicate(player)
-  local force = player.force
-  local player_name = player.name
-  local spawn = force.get_spawn_position('nauvis')
-  local nearest = findNearestForce(spawn, force.name)
-  local enemy_force = game.forces['enemy='..force.name]
-  if(enemy_force == nil) or (nearest.force == nil) then
-    say('tried to eradicate '..force.name..' but no enemy force or nearest force has been found')
-    return
+local function equalize_all(event)
+  local admin, allowed = command_player(event)
+  if not allowed then return end
+  local removed = 0
+  for _, surface in pairs(game.surfaces) do
+    for _, entity in pairs(surface.find_entities_filtered({type = {"turret", "unit-spawner"}})) do
+      local team = Teams.get_by_enemy_force(entity.force)
+      if team then
+        local nearest = Spawns.find_nearest(surface, entity.position)
+        if nearest.enemy_force and nearest.enemy_force.index ~= entity.force.index then
+          entity.destroy()
+          removed = removed + 1
+        end
+      end
+    end
   end
-  say('deleting '..player.name..'..')
-  game.remove_offline_players{player}
-
-  say('reseting the force '..force.name)
-  force.reset()
-  say('reseting the force '..enemy_force.name)
-  enemy_force.reset()
-  enemy_force.kill_all_units()
-
-  say('destroying all entities from '..force.name)
-  for _,entity in pairs(game.surfaces.nauvis.find_entities_filtered{force=force}) do
-    entity.destroy()
-  end
-
-  say('merging into the default force.')
-  game.merge_forces(force, game.forces.player)
-
-  say("scheduling chunk deletion in a 11x11 default area.. (let's hope it doesn't impact other players :/)")
-  local chunk_x = (spawn.x - 16) / 32
-  local chunk_y = (spawn.y - 16) / 32
-  delete_chunks_in_range({x=chunk_x,y=chunk_y}, 11)
-
-  say('reassigning ennemies..')
-  for _,e in pairs(game.surfaces.nauvis.find_entities_filtered{force=enemy_force}) do
-		local nearest = findNearestForce(e.position)
-		if(nearest.force == nil) then
-			say('no nearest force found for '..e.type..' at position '..e.position.x..','..e.position.y)
-    elseif e.force.name ~= ('enemy='..nearest.force.name) then
-			e.force = ('enemy='..nearest.force.name)
-			say(e.name.." joined "..nearest.force.name)
-		end
-	end
-
-  game.merge_forces(enemy_force, ('enemy='..nearest.force.name))
-
-  say(player_name..' has been eradicated from the game')
+  local text = "Equalization removed " .. removed .. " misplaced enemy structures."
+  if admin then admin.print(text) else Message.say(text) end
 end
 
-commands.add_command('eradicate', 'remove a player from existence', function(e)
-  local admin = game.players[e.player_index]
-  if not admin.admin then return end
-  local arg = e.parameter
-  if arg == nil then
-    admin.print('player name missing')
+local function eradicate_team(record)
+  local force = Teams.get_force(record)
+  local enemy_force = Teams.get_enemy_force(record)
+  if not (force and enemy_force) then return false end
+
+  local spawns = {}
+  for surface_index, surface_record in pairs(record.surfaces or {}) do
+    local surface = game.surfaces[surface_index]
+    if surface and surface_record.spawn then
+      spawns[#spawns + 1] = {surface = surface, position = surface_record.spawn}
+    end
+  end
+
+  for _, surface in pairs(game.surfaces) do
+    for _, entity in pairs(surface.find_entities_filtered({force = {force, enemy_force}})) do
+      entity.destroy()
+    end
+  end
+  force.reset()
+  enemy_force.reset()
+  enemy_force.kill_all_units()
+  Teams.remove(record)
+  game.merge_forces(force, game.forces.player)
+  game.merge_forces(enemy_force, game.forces.enemy)
+
+  for _, spawn in ipairs(spawns) do
+    delete_chunks_in_range(spawn.surface, spawn.position, 11)
+  end
+  return true
+end
+
+local function eradicate(event)
+  local admin, allowed = command_player(event)
+  if not allowed then return end
+  if not event.parameter or event.parameter == "" then
+    if admin then admin.print("Player name is required.") end
     return
   end
-  local player = game.players[arg]
-  if(player == nil) then
-    admin.print('player ['..arg..'] not found')
+  local player = game.get_player(event.parameter)
+  if not player then
+    if admin then admin.print("Player '" .. event.parameter .. "' was not found.") end
+    return
+  end
+
+  local record = Teams.get_for_player(player)
+  if not record then
+    if admin then admin.print("That player does not belong to a Sceatorio team.") end
     return
   end
   if player.connected then game.kick_player(player) end
-  if #player.force.players > 1 then game.remove_offline_players{player}
-  else eradicate(player) end
-end)
+  if #player.force.players > 1 then
+    game.remove_offline_players({player})
+    return
+  end
+
+  local name = player.name
+  game.remove_offline_players({player})
+  if eradicate_team(record) then
+    Message.say(name .. " and their isolated spawn were eradicated.")
+  end
+end
+
+commands.add_command("equalize_all", "Remove enemy structures assigned outside their team territory.", equalize_all)
+commands.add_command("eradicate", "Remove a player and, if empty, their isolated team spawn.", eradicate)
+
+Admin.equalize_all = equalize_all
+Admin.eradicate = eradicate
+
+return Admin

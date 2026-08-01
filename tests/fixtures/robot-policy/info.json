@@ -1,0 +1,8 @@
+{
+  "name": "sceatorio-robot-policy-fixture",
+  "version": "1.0.0",
+  "title": "Sceatorio Robot Policy Fixture",
+  "author": "Sceatorio test harness",
+  "factorio_version": "2.1",
+  "dependencies": ["base >= 2.1.12", "Sceatorio >= 2.0.0"]
+}

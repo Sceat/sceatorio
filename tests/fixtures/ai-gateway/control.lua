@@ -1,0 +1,3 @@
+-- Runtime behavior is driven through the production-off Sceatorio development
+-- commands so the E2E harness crosses the real RCON, UDP, gateway, and MCP
+-- boundaries. This dependent fixture only changes default settings.

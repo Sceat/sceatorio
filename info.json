@@ -1,11 +1,11 @@
 {
     "name": "Sceatorio",
-    "version": "1.1.5",
-    "title": "Sceatorio",
+    "version": "2.0.0",
+    "title": "Sceatorio — Separate Multiplayer Spawns",
     "author": "Sceat",
-    "contact": "@Sceat_",
-    "homepage": "",
-    "factorio_version": "1.1",
-    "dependencies": ["base >= 1.1.21"],
-    "description": "Separated spawn for a vanilla multiplayer experience, play with your friends without worrying for grief or resources stealing while offline"
+    "contact": "https://github.com/Sceat/sceatorio/issues",
+    "homepage": "https://github.com/Sceat/sceatorio",
+    "factorio_version": "2.1",
+    "dependencies": ["base >= 2.1.12", "? space-age >= 2.1.12"],
+    "description": "Build apart, explore together. Sceatorio creates a friendly persistent Factorio 2.1 multiplayer world with distant team spawns, independent enemies and per-surface evolution, shared radar discovery, immediate offline protection, isolated-by-default power, safe Space Age landings, and configurable robot limits."
 }

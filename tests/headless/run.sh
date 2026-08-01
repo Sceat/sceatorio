@@ -58,16 +58,29 @@ json_field() {
     python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))[sys.argv[2]])' "$1" "$2"
 }
 
+stop_active_factorio() {
+    if [ -z "${ACTIVE_FACTORIO_PID:-}" ]; then return; fi
+    kill -TERM "$ACTIVE_FACTORIO_PID" 2>/dev/null || true
+    wait "$ACTIVE_FACTORIO_PID" 2>/dev/null || true
+    ACTIVE_FACTORIO_PID=""
+}
+
 safe_cleanup() {
     status=$?
-    if [ "${KEEP_TEST_DATA:-0}" = "1" ] || [ "$status" -ne 0 ]; then
+    stop_active_factorio
+    if [ "${KEEP_TEST_DATA:-0}" = "1" ]; then
         echo "headless-test: isolated data preserved at $TEST_ROOT" >&2
         return
     fi
 
+    if [ "$status" -ne 0 ]; then
+        echo "headless-test: failed; rerun with KEEP_TEST_DATA=1 to preserve isolated test data" >&2
+    fi
+
     case "$TEST_ROOT" in
-        "${TMPDIR:-/tmp}"/sceatorio-factorio.*)
-            rm -rf -- "$TEST_ROOT"
+        "$TEST_ROOT_PREFIX"??????)
+            rm -rf -- "$TEST_ROOT" || \
+                echo "headless-test: could not clean isolated root: $TEST_ROOT" >&2
             ;;
         *)
             echo "headless-test: refusing to clean unexpected path: $TEST_ROOT" >&2
@@ -82,10 +95,24 @@ prepare_mod() {
         rsync -a --delete \
             --exclude '.git/' \
             --exclude '.DS_Store' \
+            --exclude 'dist/' \
+            --exclude 'mcp/dist/' \
+            --exclude 'mcp/node_modules/' \
+            --exclude '.pytest_cache/' \
+            --exclude '__pycache__/' \
+            --exclude '*.pyc' \
             "$REPO_ROOT/" "$mod_target/"
     else
         cp -R "$REPO_ROOT/." "$mod_target/"
-        rm -rf -- "$mod_target/.git"
+        rm -rf -- \
+            "$mod_target/.git" \
+            "$mod_target/dist" \
+            "$mod_target/mcp/dist" \
+            "$mod_target/mcp/node_modules" \
+            "$mod_target/.pytest_cache" \
+            "$mod_target/scripts/__pycache__" \
+            "$mod_target/tests/headless/__pycache__" \
+            "$mod_target/tests/unit/__pycache__"
     fi
 }
 
@@ -153,6 +180,17 @@ run_factorio() {
         "$@"
 }
 
+# Backgrounding a shell function makes $! identify a wrapper subshell on some
+# shells. Replace that subshell with Factorio so TERM/wait always target the
+# process that owns the test sockets.
+run_factorio_background() {
+    exec "$FACTORIO_BIN_PATH" \
+        --config "$CONFIG_FILE" \
+        --mod-directory "$MODS_DIR" \
+        --disable-audio \
+        "$@"
+}
+
 create_save() {
     profile=$1
     SAVE_FILE="$WRITE_DATA/saves/sceatorio-$profile.zip"
@@ -201,25 +239,26 @@ run_server() {
 }
 EOF
 
-    run_factorio \
+    run_factorio_background \
         --start-server "$SAVE_FILE" \
         --bind 127.0.0.1 \
         --port "${FACTORIO_TEST_PORT:-34199}" \
         --server-settings "$server_settings" \
         --server-id "$WRITE_DATA/server-id.json" \
         > "$server_log" 2>&1 &
-    server_pid=$!
+    ACTIVE_FACTORIO_PID=$!
+    server_pid=$ACTIVE_FACTORIO_PID
 
     attempts=0
     while [ "$attempts" -lt 80 ]; do
         if grep -Eq 'Hosting game|changing state from\(CreatingGame\) to\(InGame\)' "$server_log"; then
-            kill -TERM "$server_pid" 2>/dev/null || true
-            wait "$server_pid" 2>/dev/null || true
+            stop_active_factorio
             echo "headless-test: isolated server reached hosting state"
             return
         fi
         if ! kill -0 "$server_pid" 2>/dev/null; then
             wait "$server_pid" || true
+            ACTIVE_FACTORIO_PID=""
             sed -n '1,240p' "$server_log" >&2
             fail "server exited before reaching hosting state"
         fi
@@ -227,8 +266,7 @@ EOF
         sleep 0.25
     done
 
-    kill -TERM "$server_pid" 2>/dev/null || true
-    wait "$server_pid" 2>/dev/null || true
+    stop_active_factorio
     sed -n '1,240p' "$server_log" >&2
     fail "server did not reach hosting state within 20 seconds"
 }
@@ -260,31 +298,31 @@ run_fixture() {
 }
 EOF
         echo "headless-test: running $case_id"
-        run_factorio \
+        run_factorio_background \
             --start-server-load-scenario "$fixture_name" \
             --bind 127.0.0.1 \
             --port "${FACTORIO_TEST_PORT:-34199}" \
             --server-settings "$fixture_settings" \
             --server-id "$WRITE_DATA/$fixture_name-server-id.json" \
             > "$fixture_log" 2>&1 &
-        fixture_pid=$!
+        ACTIVE_FACTORIO_PID=$!
+        fixture_pid=$ACTIVE_FACTORIO_PID
 
         attempts=0
         while [ "$attempts" -lt 80 ]; do
             if grep -Fq "$pass_marker" "$fixture_log"; then
-                kill -TERM "$fixture_pid" 2>/dev/null || true
-                wait "$fixture_pid" 2>/dev/null || true
+                stop_active_factorio
                 echo "headless-test: $case_id emitted $pass_marker"
                 break
             fi
             if grep -Eq 'SCEATORIO_[A-Z_]+_FAIL' "$fixture_log"; then
-                kill -TERM "$fixture_pid" 2>/dev/null || true
-                wait "$fixture_pid" 2>/dev/null || true
+                stop_active_factorio
                 sed -n '1,260p' "$fixture_log" >&2
                 fail "$case_id emitted a failure marker"
             fi
             if ! kill -0 "$fixture_pid" 2>/dev/null; then
                 wait "$fixture_pid" || true
+                ACTIVE_FACTORIO_PID=""
                 sed -n '1,260p' "$fixture_log" >&2
                 fail "$case_id exited before $pass_marker"
             fi
@@ -292,12 +330,199 @@ EOF
             sleep 0.25
         done
         if [ "$attempts" -ge 80 ]; then
-            kill -TERM "$fixture_pid" 2>/dev/null || true
-            wait "$fixture_pid" 2>/dev/null || true
+            stop_active_factorio
             sed -n '1,260p' "$fixture_log" >&2
             fail "$case_id did not emit $pass_marker within 20 seconds"
         fi
     done < "$fixture_manifest"
+}
+
+run_mod_fixture() {
+    profile=$1
+    fixture_manifest="$TEST_ROOT/mod-fixtures.tsv"
+    python3 "$MATRIX_HELPER" "$MATRIX" fixtures \
+        "$profile" "$FIXTURE_FILTER" mod-fixture > "$fixture_manifest"
+    [ -s "$fixture_manifest" ] || \
+        fail "no implemented mod fixture for profile=$profile filter=$FIXTURE_FILTER"
+
+    tab=$(printf '\t')
+    while IFS="$tab" read -r case_id fixture_name pass_marker; do
+        fixture_source="$REPO_ROOT/tests/fixtures/$fixture_name"
+        fixture_info="$fixture_source/info.json"
+        [ -f "$fixture_info" ] || fail "missing fixture info.json: $fixture_source"
+        fixture_mod_name=$(json_field "$fixture_info" name)
+        fixture_mod_version=$(json_field "$fixture_info" version)
+        fixture_target="$MODS_DIR/${fixture_mod_name}_${fixture_mod_version}"
+        mkdir -p "$fixture_target"
+        cp -R "$fixture_source/." "$fixture_target/"
+        python3 "$MATRIX_HELPER" "$MATRIX" mod-list \
+            "$profile" "$MOD_NAME" "" "$fixture_mod_name" > "$MODS_DIR/mod-list.json"
+
+        fixture_log="$WRITE_DATA/$fixture_name.log"
+        fixture_reload_log="$WRITE_DATA/$fixture_name-reload.log"
+        fixture_save="$WRITE_DATA/saves/$fixture_name.zip"
+        echo "headless-test: running $case_id"
+        if ! run_factorio --create "$fixture_save" --map-gen-seed 424242 \
+            > "$fixture_log" 2>&1; then
+            sed -n '1,300p' "$fixture_log" >&2
+            fail "$case_id exited unsuccessfully"
+        fi
+        fixture_checkpoint="$WRITE_DATA/saves/$fixture_name-checkpoint.zip"
+        fixture_server_log="$WRITE_DATA/$fixture_name-server.log"
+        fixture_settings="$WRITE_DATA/$fixture_name-server-settings.json"
+        cat > "$fixture_settings" <<'EOF'
+{
+  "name": "Sceatorio state-roundtrip fixture",
+  "description": "Disposable local integration test",
+  "visibility": {"public": false, "lan": false},
+  "require_user_verification": false,
+  "auto_pause": false
+}
+EOF
+        run_factorio_background \
+            --start-server "$fixture_save" \
+            --bind 127.0.0.1 \
+            --port "${FACTORIO_TEST_PORT:-34209}" \
+            --server-settings "$fixture_settings" \
+            --server-id "$WRITE_DATA/$fixture_name-server-id.json" \
+            < /dev/null > "$fixture_server_log" 2>&1 &
+        ACTIVE_FACTORIO_PID=$!
+        fixture_pid=$ACTIVE_FACTORIO_PID
+
+        attempts=0
+        checkpoint_ready=0
+        while [ "$attempts" -lt 240 ]; do
+            if grep -Eq 'SCEATORIO_[A-Z_]+_FAIL' "$fixture_server_log"; then
+                stop_active_factorio
+                sed -n '1,300p' "$fixture_server_log" >&2
+                fail "$case_id emitted a failure marker before checkpoint"
+            fi
+            # game.server_save is asynchronous. Killing as soon as the archive
+            # appears can race ParallelScenarioSaver and crash Factorio 2.1.12
+            # during shutdown; wait for the engine's completion marker.
+            if grep -Eq 'SCEATORIO_[A-Z_]+_CHECKPOINT' "$fixture_server_log" \
+                && [ -s "$fixture_checkpoint" ] \
+                && grep -Fq 'Saving finished' "$fixture_server_log"; then
+                checkpoint_ready=1
+                stop_active_factorio
+                break
+            fi
+            if ! kill -0 "$fixture_pid" 2>/dev/null; then
+                wait "$fixture_pid" || true
+                ACTIVE_FACTORIO_PID=""
+                sed -n '1,300p' "$fixture_server_log" >&2
+                fail "$case_id server exited before checkpoint"
+            fi
+            attempts=$((attempts + 1))
+            sleep 0.25
+        done
+        if [ "$checkpoint_ready" -ne 1 ]; then
+            stop_active_factorio
+            sed -n '1,300p' "$fixture_server_log" >&2
+            fail "$case_id did not finish a checkpoint within 60 seconds"
+        fi
+
+        if ! run_factorio \
+            --benchmark "$fixture_checkpoint" \
+            --benchmark-ticks "${FACTORIO_FIXTURE_BENCHMARK_TICKS:-900}" \
+            --benchmark-runs "${FACTORIO_FIXTURE_BENCHMARK_RUNS:-1}" \
+            --benchmark-sanitize > "$fixture_reload_log" 2>&1; then
+            sed -n '1,300p' "$fixture_reload_log" >&2
+            fail "$case_id checkpoint reload exited unsuccessfully"
+        fi
+        fixture_engine_log="$WRITE_DATA/factorio-current.log"
+        if grep -Eq 'SCEATORIO_[A-Z_]+_FAIL' \
+            "$fixture_log" "$fixture_server_log" "$fixture_reload_log" \
+            "$fixture_engine_log"; then
+            sed -n '1,300p' "$fixture_log" >&2
+            sed -n '1,300p' "$fixture_server_log" >&2
+            sed -n '1,300p' "$fixture_reload_log" >&2
+            sed -n '1,300p' "$fixture_engine_log" >&2
+            fail "$case_id emitted a failure marker"
+        fi
+        if ! grep -Fq "$pass_marker" "$fixture_reload_log" \
+            && ! grep -Fq "$pass_marker" "$fixture_engine_log"; then
+            sed -n '1,300p' "$fixture_log" >&2
+            sed -n '1,300p' "$fixture_server_log" >&2
+            sed -n '1,300p' "$fixture_reload_log" >&2
+            sed -n '1,300p' "$fixture_engine_log" >&2
+            fail "$case_id exited before $pass_marker"
+        fi
+        echo "headless-test: $case_id emitted $pass_marker"
+        fixture_retired="$TEST_ROOT/completed-mod-fixtures/$case_id"
+        mkdir -p "$TEST_ROOT/completed-mod-fixtures"
+        mv "$fixture_target" "$fixture_retired"
+        if [ -f "$MODS_DIR/mod-settings.dat" ]; then
+            mv "$MODS_DIR/mod-settings.dat" "$fixture_retired/mod-settings.dat"
+        fi
+    done < "$fixture_manifest"
+}
+
+run_ai_e2e() {
+    profile=$1
+    [ "$profile" = "base" ] || fail "the AI gateway E2E currently uses the base profile"
+    fixture_source="$REPO_ROOT/tests/fixtures/ai-gateway"
+    fixture_info="$fixture_source/info.json"
+    fixture_mod_name=$(json_field "$fixture_info" name)
+    fixture_mod_version=$(json_field "$fixture_info" version)
+    fixture_target="$MODS_DIR/${fixture_mod_name}_${fixture_mod_version}"
+    mkdir -p "$fixture_target"
+    cp -R "$fixture_source/." "$fixture_target/"
+    python3 "$MATRIX_HELPER" "$MATRIX" mod-list \
+        "$profile" "$MOD_NAME" "" "$fixture_mod_name" > "$MODS_DIR/mod-list.json"
+
+    SAVE_FILE="$WRITE_DATA/saves/sceatorio-ai-gateway.zip"
+    run_factorio --create "$SAVE_FILE" --map-gen-seed 424242
+    server_settings="$fixture_source/server-settings.json"
+    server_log="$WRITE_DATA/ai-gateway-server.log"
+    lua_udp_port=${FACTORIO_LUA_UDP_PORT:-34320}
+    rcon_port=${FACTORIO_RCON_PORT:-34321}
+    game_port=${FACTORIO_TEST_PORT:-34322}
+    rcon_password="sceatorio-isolated-e2e"
+
+    npm --prefix "$REPO_ROOT/mcp" run build --silent
+    run_factorio_background \
+        --start-server "$SAVE_FILE" \
+        --bind 127.0.0.1 \
+        --port "$game_port" \
+        --server-settings "$server_settings" \
+        --server-id "$WRITE_DATA/ai-gateway-server-id.json" \
+        --rcon-bind "127.0.0.1:$rcon_port" \
+        --rcon-password "$rcon_password" \
+        --enable-lua-udp "$lua_udp_port" \
+        > "$server_log" 2>&1 &
+    ACTIVE_FACTORIO_PID=$!
+    ai_server_pid=$ACTIVE_FACTORIO_PID
+
+    attempts=0
+    while [ "$attempts" -lt 80 ]; do
+        if grep -Eq 'Hosting game|changing state from\(CreatingGame\) to\(InGame\)' "$server_log"; then
+            break
+        fi
+        if ! kill -0 "$ai_server_pid" 2>/dev/null; then
+            wait "$ai_server_pid" || true
+            ACTIVE_FACTORIO_PID=""
+            sed -n '1,320p' "$server_log" >&2
+            fail "AI gateway server exited before reaching hosting state"
+        fi
+        attempts=$((attempts + 1))
+        sleep 0.25
+    done
+    if [ "$attempts" -ge 80 ]; then
+        sed -n '1,320p' "$server_log" >&2
+        fail "AI gateway server did not reach hosting state"
+    fi
+
+    if ! SCEATORIO_E2E_RCON_PORT="$rcon_port" \
+        SCEATORIO_E2E_RCON_PASSWORD="$rcon_password" \
+        SCEATORIO_E2E_LUA_UDP_PORT="$lua_udp_port" \
+        node "$REPO_ROOT/tests/e2e/ai-gateway.mjs"; then
+        sed -n '1,420p' "$server_log" >&2
+        fail "AI gateway E2E failed"
+    fi
+
+    stop_active_factorio
+    echo "headless-test: AI gateway E2E passed"
 }
 
 run_profiles() {
@@ -315,6 +540,8 @@ run_profiles() {
             server) run_server "$profile" ;;
             benchmark) run_benchmark "$profile" ;;
             fixture) run_fixture "$profile" ;;
+            mod-fixture) run_mod_fixture "$profile" ;;
+            ai-e2e) run_ai_e2e "$profile" ;;
             *) fail "unsupported command: $command_name" ;;
         esac
     done
@@ -322,7 +549,7 @@ run_profiles() {
 
 command_name=${1:-smoke}
 profile=${2:-all}
-if [ "$command_name" = "fixture" ]; then
+if [ "$command_name" = "fixture" ] || [ "$command_name" = "mod-fixture" ]; then
     FIXTURE_FILTER=${3:-all}
     EXTERNAL_MOD_SET=""
 else
@@ -331,8 +558,8 @@ else
 fi
 
 case "$command_name" in
-    smoke|server|benchmark|fixture) ;;
-    *) fail "usage: tests/headless/run.sh (smoke|server|benchmark|fixture) [base|space-age|all] [external-mod-set|fixture]" ;;
+    smoke|server|benchmark|fixture|mod-fixture|ai-e2e) ;;
+    *) fail "usage: tests/headless/run.sh (smoke|server|benchmark|fixture|mod-fixture|ai-e2e) [base|space-age|all] [external-mod-set|fixture]" ;;
 esac
 
 command -v python3 >/dev/null 2>&1 || fail "python3 is required to read matrix.json"
@@ -346,12 +573,14 @@ ACTUAL_VERSION=$("$FACTORIO_BIN_PATH" --version | sed -n 's/^Version: \([^ ]*\).
 READ_DATA=$(find_read_data)
 MOD_NAME=$(json_field "$REPO_ROOT/info.json" name)
 MOD_VERSION=$(json_field "$REPO_ROOT/info.json" version)
-TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/sceatorio-factorio.XXXXXX")
+TEST_ROOT_PREFIX="${TMPDIR:-/tmp}/sceatorio-factorio."
+TEST_ROOT=$(mktemp -d "${TEST_ROOT_PREFIX}XXXXXX")
 WRITE_DATA="$TEST_ROOT/write-data"
 MODS_DIR="$TEST_ROOT/mods"
 CONFIG_FILE="$WRITE_DATA/config/config.ini"
 trap safe_cleanup EXIT
 trap 'exit 130' HUP INT TERM
+ACTIVE_FACTORIO_PID=""
 
 write_config
 prepare_mod

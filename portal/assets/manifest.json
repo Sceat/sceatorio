@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-01",
+  "generator": "OpenAI gpt-image 2.0",
+  "digital_source_type": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+  "selected_portal_thumbnail": "portal/assets/thumbnail-v3.png",
+  "selected_ai_assistance_source": "portal/assets/ai-assistance-source-v3.png",
+  "selected_ai_assistance_master": "portal/assets/ai-assistance-v3.png",
+  "selected_ai_assistance_icon": "graphics/technology/ai-assistance.png",
+  "c2pa_audit": {
+    "checked_at": "2026-08-01",
+    "tool": "c2patool 0.27.3",
+    "audited_ai_source": "portal/assets/ai-assistance-source-v2.png",
+    "audited_ai_source_claim_generator": "OpenAI Media Service API",
+    "audited_ai_source_spec_version": "2.2.0",
+    "audited_ai_source_validation_status": ["signingCredential.untrusted"]
+  },
+  "files": [
+    {
+      "path": "portal/assets/thumbnail-source-v3.png",
+      "role": "editable generated source",
+      "dimensions": [1254, 1254],
+      "sha256": "233747e02b567fddc3c18eb181dbd366d14e071474ee32d894282a0047ce1371",
+      "c2pa_manifest": true
+    },
+    {
+      "path": "portal/assets/thumbnail-v3.png",
+      "role": "selected 256px portal and package thumbnail",
+      "dimensions": [256, 256],
+      "sha256": "7feecc217951be950b2d73ff3399ebf7403af951ee1a1e59d5245c9c9b26fcea",
+      "c2pa_manifest": false,
+      "derived_with": "sips -z 256 256 thumbnail-source-v3.png --out thumbnail-v3.png"
+    },
+    {
+      "path": "portal/assets/ai-assistance-source-v1.png",
+      "role": "editable generated source for the AI Assistance technology icon",
+      "dimensions": [1254, 1254],
+      "sha256": "aae5af01fd8f7e29750236d75fc77f20e487ac16cf625637638ad883e30ceeeb",
+      "c2pa_manifest": true
+    },
+    {
+      "path": "portal/assets/ai-assistance-source-v2.png",
+      "role": "editable generated source for the Claude-referencing AI Assistance technology icon",
+      "dimensions": [1254, 1254],
+      "sha256": "4d7ac3eef7e5432a295cbec87dd26888f5968ef2b65668cf098cbf385a562969",
+      "c2pa_manifest": true
+    },
+    {
+      "path": "portal/assets/ai-assistance-source-v3.png",
+      "role": "editable generated chroma-key source for the transparent Claude-referencing AI Assistance technology icon",
+      "dimensions": [1254, 1254],
+      "sha256": "00d558ad531a8ab2080d5a45ba128cbb25d5b8428d5447d34d2db46632bc02a1",
+      "c2pa_manifest": true
+    },
+    {
+      "path": "portal/assets/ai-assistance-v3.png",
+      "role": "transparent full-resolution master for the selected AI Assistance technology icon",
+      "dimensions": [1254, 1254],
+      "sha256": "e7549590823088356c48977d1861b0607555fadc1962cd0bf37dd696c63df191",
+      "c2pa_manifest": false,
+      "derived_with": "python3 \"${CODEX_HOME:-$HOME/.codex}/skills/.system/imagegen/scripts/remove_chroma_key.py\" --input portal/assets/ai-assistance-source-v3.png --out portal/assets/ai-assistance-v3.png --auto-key border --soft-matte --transparent-threshold 12 --opaque-threshold 220 --despill --force",
+      "derivation_tool_sha256": "3f7b9b14ad5c90f37618bc1c16a039a2076abca12ddc41b3ae470e2b1cad6c0e"
+    },
+    {
+      "path": "graphics/technology/ai-assistance.png",
+      "role": "selected transparent 256px in-game AI Assistance technology icon",
+      "dimensions": [256, 256],
+      "sha256": "6d9161b0e6f25870da48d8b63594b21099ee94b1c483f67fa22bbfb9d0124e45",
+      "c2pa_manifest": false,
+      "derived_with": "sips -z 256 256 portal/assets/ai-assistance-v3.png --out graphics/technology/ai-assistance.png"
+    }
+  ],
+  "base_prompt": "Use case: logo-brand\nAsset type: square thumbnail for an open-source Factorio multiplayer scenario mod portal\nPrimary request: Create a distinctive compact emblem communicating separate multiplayer teams, isolated safe spawns, factory planning, and interplanetary expansion.\nScene/backdrop: dark charcoal square backdrop with a subtle circular planet silhouette.\nSubject: four small industrial outposts arranged around the planet, each with its own colored safe-zone ring, linked visually by restrained conveyor-belt geometry and one clean power-grid motif without implying the electrical networks are shared.\nStyle/medium: polished hand-painted game-mod icon, crisp geometric silhouettes, slightly isometric, readable at 144x144, original visual identity.\nComposition/framing: centered symmetric emblem, generous edge padding, strong hierarchy, no tiny details.\nLighting/mood: energetic but trustworthy, high contrast.\nColor palette: graphite, iron gray, warm copper, electric cyan, muted lime and amber team accents.\nConstraints: no text, no letters, no logos, no watermark, no copyrighted game characters or official Factorio logo, no photorealism, no UI screenshot, no weapons dominating the image.",
+  "edit_prompt": "Edit the generated square mod thumbnail while preserving its four colored industrial outposts, dark planet, polished isometric style, palette, symmetry, lighting, and text-free composition. Change only the connectivity metaphor: remove every conveyor, cable, pipe, and copper line that connects an outpost to the center or to another outpost. Leave clear dark-space gaps between all four colored safe zones. Give each outpost one small self-contained pole/grid detail entirely inside its own colored ring. Replace the center with a simple subtle four-way compass/spawn marker that does not touch any base. Keep it crisp and readable at 144x144. No text, logo, watermark, characters, or official game branding.",
+  "ai_assistance_icon_prompt": "Use case: logo-brand\nAsset type: square technology icon for an open-source Factorio multiplayer mod\nPrimary request: Create an original compact icon for an early-game technology called AI Assistance, communicating a powered factory intelligence uplink that advises a human engineer.\nSubject: a small copper-and-iron radio uplink terminal with a glowing cyan circuit-brain core, one simple antenna arc, and a subtle red automation-science flask motif integrated behind it.\nStyle/medium: polished hand-painted industrial strategy-game technology icon, crisp chunky silhouette, slightly isometric, readable at 64x64 and 128x128, original visual identity.\nComposition/framing: centered single emblem, generous edge padding, no tiny wires, strong circular or diamond silhouette.\nLighting/mood: inventive, approachable, trustworthy; warm copper rim light and cool cyan core.\nColor palette: iron gray, oxidized copper, electric cyan, restrained red accent, dark navy backdrop.\nConstraints: no text, no letters, no watermark, no logos, no copyrighted game characters, no official Factorio logo, no photorealism, no UI screenshot, no humanoid robot, no generic sparkle effects. Square 1:1.",
+  "ai_assistance_icon_edit_prompt": "Edit the supplied square AI Assistance technology icon. Preserve the exact overall composition, centered copper-and-iron radio uplink terminal, antenna arcs, chunky readable silhouette, dark navy background, copper rim, subtle red automation-science flask/circuit motif, lighting, and generous padding. Change the terminal display only: replace the generic cyan circuit-brain glyph with a clearly recognizable, friendly Claude AI mascot/brand mark rendered as the characteristic warm terracotta-orange radiating starburst/asterisk character, clean and simple enough to read at 64x64. Give it a subtle cyan screen glow so it belongs in the existing device, but keep the mascot itself warm Claude orange. It should feel approachable and unmistakably AI-assisted, not like a human face or humanoid robot. No text, letters, watermark, official Factorio logo, UI screenshot, extra objects, or composition changes. Square 1:1.",
+  "ai_assistance_icon_background_extraction_prompt": "Use case: background-extraction\nAsset type: Factorio technology icon source\nPrimary request: Isolate the complete copper-and-iron AI uplink device and its circular mechanical halo from the supplied image, preserving the exact subject design, front-facing composition, Claude-inspired orange starburst, cyan radio arcs, copper rim, dark metal details, and crisp Factorio-style painted rendering. Replace only the dark navy square background with a perfectly flat solid #00ff00 chroma-key background for later removal.\nComposition: centered square icon, preserve the existing subject scale and generous but minimal padding; keep every outer copper halo tab and the bottom base fully inside the canvas.\nConstraints: background must be one uniform #00ff00 color with no shadows, gradients, texture, reflections, floor plane, vignette, glow spill, or lighting variation. No cast shadow or contact shadow outside the subject. Do not use #00ff00 anywhere in the subject. No text, watermark, border, or square backing plate. Change only the background; keep the device and halo visually faithful."
+}

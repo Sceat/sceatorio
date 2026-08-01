@@ -1,4 +1,47 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.0.0
+Date: 2026-08-01
+  Major Features:
+    - Ported the gameplay runtime to Factorio 2.1.12 and optional Space Age 2.1.12.
+    - Added stable fresh-world team records and per-surface state with normal save/restart support and narrowly identified legacy player-force migration.
+    - Rebuilt team joining around validated GUI tags and expiring request tokens.
+    - Added one stable, separated, native-preserving spawn per team on each physically visited planet.
+  Evolution:
+    - Added event-driven worm and spawner counters, deduplicated connected-team time, and bounded surface unit-spawner pollution-consumption deltas.
+    - Added reset-safe pollution cursors so late teams, disabled evolution, counter resets, save/reload, and the gross-emissions-to-nest-consumption migration never back-charge or subtract historical evolution.
+    - Matched vanilla pollution evolution by counting only cumulative output attributed to unit-spawner prototypes; gross emissions and scrubber/tree output are ignored, so interception can reduce future evolution before pollution reaches a nest.
+    - Added configurable coefficients and explicit handling of vanilla evolution settings.
+  Security:
+    - Isolated cross-team electric networks with bounded audits, exact player refunds, and mutual sharing intent.
+    - Added a bounded next-tick composite-build audit that rejects unannounced companion poles supplying another team's entities without invalidating a script-raised parent inside its creator's callback.
+    - Added immediate offline preservation with exact restoration of each registered entity's prior destructible state.
+    - Shared newly charted chunks among all registered Sceatorio human teams without recurring radar scans or diplomacy changes.
+    - Bounded shared-chart work to 4,096 deduplicated chunks with visible backpressure, versioned low-priority surface reconciliation, and one cached team-force snapshot per active drain tick.
+  Interface:
+    - Kept the live player panel compact at the top left with exact online/offline counts and independent six-row pages that preserve access to every player's cumulative playtime.
+  Robots:
+    - Added configurable per-team logistic and construction robot policies across fixed networks and surfaces.
+    - Enforcement pauses only crafting machines currently producing a capped robot class and never moves robot items.
+  AI Assistance:
+    - Added one automation-science technology, powered Uplink, dedicated circuit ports, per-player opt-in, one-time pairing, revocation, and 24 scoped MCP tools.
+    - Added bounded per-player quotas, force/surface authorization, event waits, structured blueprint inboxes, private annotations, and a no-character-control safety boundary.
+    - Added atomic save-wide total and expensive request budgets, expensive charging for event waits, round-robin wait processing, and a migrating O(1) entity-reference ring.
+    - Added bounded exact-response replay for pairing and operations, UUID-conflict rejection, authorization-before-cache, and fail-closed global disable cleanup.
+    - Added a persisted 64-packet ingress queue with a four-request-per-tick Lua work budget, per-force event rings, and explicit truncation for broad telemetry scans.
+    - Canonicalized the rolling per-player blueprint library, capped it at 100 records and 512 KiB, and evicted oldest records deterministically instead of permanently filling the inbox.
+  Testing:
+    - Added fast state/security/Space Age/robot checks and an isolated Factorio 2.1.12 headless harness.
+    - Added an administrator-only, production-off control to research all available technologies for the current registered team force.
+    - Added deterministic allowlisted packages and immutable tag-to-portal release validation.
+    - Added a real Factorio 2.1.12 UDP/stdio MCP end-to-end test covering every operation path and critical pairing failures.
+    - Added checksum-pinned CI and tagged-release gates using Wube's free exact-version Linux headless build.
+  Bugfixes:
+    - Fixed player names with punctuation, target-force assignment, surface routing, and unit-group iteration.
+    - Fixed the Factorio 2.1 player-list crash caused by writing scroll-policy keys through LuaStyle; the compact panel no longer creates a scroll pane.
+    - Fixed research-start notices passing the team and technology to Factorio's locale in reverse order.
+    - Fixed chart propagation overwriting recipient-only discovery by preserving the canonical registered-team union.
+    - Fixed Space Age remote-view surfaces leaking into physical presence, evolution, player-list, AI scope, and event decisions.
+---------------------------------------------------------------------------------------------------
 Version: 0.18.44
 Date: 2020.04.04
   Bugfix:

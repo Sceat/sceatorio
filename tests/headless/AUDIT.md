@@ -7,26 +7,109 @@ implementation and its static and isolated-engine validation under `tests/`.
 
 - The executable used was Wube's macOS arm64 build 87038, reporting Factorio
   `2.1.12` and map output `2.1.12-2`.
+- GitHub Actions uses Wube's free Linux headless archive from the exact 2.1.12
+  URL and verifies SHA-256 `885ff029a40b0edd815cfe1fc13845f232723da1ea8fe9a83eae114d1eccd3fe`
+  from the matrix SSOT before running the same isolated first-party suite.
 - Its bundled `runtime-api.json` and Wube's current downloaded JSON both report
   application version `2.1.12`, runtime API version `6`, and have identical
   SHA-256 `a60e482db523d3910f5ef6081032efc51862dc92e2523b35b263f501e956f310`.
 - `tests/headless/run.sh smoke all` passed against isolated base and Space Age
   profiles after the Space Age and robot-policy implementation. Both completed
-  `on_init` and 120 benchmark ticks. The latest run averaged `0.265 ms/update`
-  for base and `0.278 ms/update` for Space Age.
+  `on_init` and 120 benchmark ticks. The final audit run averaged
+  `0.260 ms/update` for base and `0.306 ms/update` for Space Age.
 - `tests/headless/run.sh server space-age` created a save, reloaded it through
   the dedicated-server path, and reached `Hosting game` and
-  `CreatingGame -> InGame`. The harness uses `SIGTERM` for bounded teardown;
-  a background POSIX shell can inherit ignored `SIGINT`.
+  `CreatingGame -> InGame`. Checkpoint fixtures now wait for Factorio's
+  `Saving finished` marker before bounded `SIGTERM` teardown. This closes a
+  reproduced Factorio 2.1.12 `ParallelScenarioSaver` SIGSEGV caused by
+  terminating while `game.server_save` was still completing asynchronously.
 - The fixed-seed Space Age engine baseline completed three 3,600-tick runs at
-  `0.270`, `0.269`, and `0.272 ms/update`, all with checksum `3216346747`.
-- The isolated `security.runtime-wire-isolation` runtime fixture passed on the
-  same build, and the full static suite passed 31/31 checks.
+  `0.275`, `0.271`, and `0.268 ms/update`, all with checksum `3835234403`.
+- The isolated `security.runtime-wire-isolation` fixture passed on the same
+  build. Dedicated-server checkpoint/reload fixtures also emitted
+  `SCEATORIO_OFFLINE_PASS`, `SCEATORIO_EVOLUTION_PASS`, and
+  `SCEATORIO_ROBOT_POLICY_PASS`, covering exact offline restoration,
+  persisted team/surface evolution, and non-destructive production
+  pause/clone restoration. The 64-network/1,024-candidate stress fixture also
+  emitted `SCEATORIO_ROBOT_PERFORMANCE_PASS`. The Space Age fixture emitted
+  `SCEATORIO_PLANET_PASS` for all three matrix requirements after creating all
+  five built-in planet surfaces and a real platform, keeping two teams
+  separated, preserving native terrain/content, rejecting the platform, and
+  reassigning a pre-generated Gleba hostile without touching the other team's
+  hostile. The full static suite passed 105 of 105 checks.
 
 These are real engine load and empty-save overhead results. They are **not** a
 measurement of active logistic or construction robot performance.
 
-Official references: [2.1.12 runtime API](https://lua-api.factorio.com/latest/),
+### Radar and player-HUD performance invariants
+
+- Incremental chart propagation deduplicates by surface and chunk and drains at
+  32 chunks per tick. The sorted human-team force list is built once for that
+  entire tick batch, not once per queued chunk.
+- The pending chart queue is capped at 4,096 chunks. An overflow is visible in
+  player/server warnings and `sceatorio_teams.chart_status`; it coalesces to one
+  versioned recovery record per surface. Recovery examines at most 16 generated
+  chunks per tick when the normal queue is below its low-water mark and rebuilds
+  missing union entries from Factorio's persistent force charts. An overflow
+  during a pass causes one more pass, so it does not silently lose discovery.
+- The compact top-left player HUD caches sorted online/offline player indexes.
+  Join/leave/force/surface events rerender only bounded visible pages rather
+  than rescanning and drawing all historical players for every viewer. Online
+  and offline counts remain exact, with six entries per independent page, so
+  every engine-maintained cumulative playtime remains reachable without an
+  unbounded panel or a scroll-pane style write.
+
+### Immediate offline-transition fixture
+
+The exact-2.1.12 `security.offline-transition-overhead` fixture builds a dense
+synthetic base of 10,000 real stone walls on generated, paved Nauvis terrain.
+Nine thousand start with the normal destructible state and 1,000 start false.
+It profiles the immediate unprotect/protect call separately from verification,
+then synchronously checks every entity after the call, checkpoints while
+protected, reloads in a second Factorio process, and repeats exact restoration
+and protection. The development call's ordinary diagnostic status snapshot is
+explicitly suppressed only for this measurement; its default behavior remains
+unchanged.
+
+The production transition walks the force-index bucket in place with `next`,
+capturing each successor before stale-entry validation. A static regression
+test rejects the former `local registrations = {}` O(N) snapshot in this
+critical path. Touching each registered durable entity is still inherently
+O(N), because immediate protection requires writing every entity's
+`destructible` property. This dense wall grid isolates traversal and property
+writes; it does not model a mixed active factory, combat, client/network join
+latency, third-party entities, or comparative megabase UPS.
+
+The fixture passed on Wube's macOS arm64 Factorio 2.1.12 build 87038 and emitted
+`SCEATORIO_OFFLINE_PERFORMANCE_PASS` after four immediate profiled transitions
+and the protected checkpoint reload. All 10,000 registrations were in the
+expected state when checked immediately after each call returned. Both
+pre-save and post-reload unprotect calls restored 9,000 true plus 1,000
+preexisting false states.
+
+A retained rerun on the audited macOS 15.7.3 arm64 host (14 cores, 36,864 MB
+RAM as reported by Factorio) produced these `LuaProfiler` wall-time samples:
+
+| Transition | Tick | Duration |
+| --- | ---: | ---: |
+| Unprotect before save | 0 | 47.146000 ms |
+| Protect before save | 0 | 65.582459 ms |
+| Unprotect after reload | 2 | 54.373041 ms |
+| Protect after reload | 2 | 45.199542 ms |
+
+The four-sample range was 45.200-65.582 ms and the median was 50.760 ms. At
+10,000 registered entities, an immediate presence transition can therefore
+consume roughly 2.7-3.9 nominal 60-UPS update budgets on this host and may be a
+visible one-off hitch. The samples include the development-interface call
+boundary but exclude its O(N) status report and exclude the fixture's entity
+verification loop. They are one synthetic run, not a percentile, cross-host
+benchmark, active-factory measurement, or release latency threshold. The
+static test proves specifically that Sceatorio creates no second O(N) Lua
+registration snapshot in the transition; it does not claim that Factorio's
+property writes allocate nothing internally.
+
+Official references: [2.1.12 runtime API](https://lua-api.factorio.com/2.1.12/),
+[free Linux headless server](https://factorio.com/support/faq),
 [command-line parameters](https://wiki.factorio.com/Command_line_parameters).
 
 ## Implemented surface and Space Age policy
@@ -53,6 +136,19 @@ machine:
 - Each human team retains its own spawn, economy, and evolution ledger on every
   planet. Human-team friendship, ceasefire, and native force chart sharing do
   not merge those records or alter per-team enemy-force assignment.
+- Pollution evolution follows Factorio's actual 2.1.12 consumption boundary:
+  `LuaSurface.pollution_statistics.output_counts` is surface-global rather
+  than force-scoped. Once per recorded surface per second, Sceatorio iterates
+  only those statistic keys and sums values whose runtime entity prototype has
+  type `unit-spawner`; every existing team ledger on that surface receives the
+  same positive delta. Gross input emissions and non-spawner outputs do not
+  count, so trees and scrubbers can reduce future evolution by intercepting
+  pollution before a nest consumes it. No chunk/entity scan, pollution-cloud
+  proximity, or triangulation is involved, and evolution already credited is
+  never subtracted. A first/reduced counter rebaselines and disabled evolution
+  advances its cursor without back-charge. The real evolution checkpoint
+  fixture covers gross-emission rejection, exact biter-spawner consumption,
+  two teams, a late team, another surface, freeze/re-enable, reset, and reload.
 - A first surface-targeted cargo pod is held while its asynchronous reservation
   finishes, then released to the stable exact position. Landing-pad and other
   non-surface destinations remain native. The pod and cargo are never deleted.
@@ -96,19 +192,20 @@ Use the exact 2.1.12 events rather than polling every player every tick:
    `player_index`. If its destination is a supported planet and the player's
    force lacks a record, atomically reserve a location and call
    `request_to_generate_chunks`.
-2. If a force cargo landing pad already exists on the target surface, native
-   landing-pad behavior wins. Register one safe respawn near that pad rather
-   than redirecting the pod or creating duplicate resources.
-3. Otherwise, set `cargo_pod_destination` to the reserved exact position only
-   after an integration test proves the property remains writable at that pod
-   phase. Do not block the tick waiting for chunks.
+2. A later trip to a team surface whose spawn is already ready keeps its native
+   explicit destination; stable-spawn reuse does not hijack normal travel.
+3. For the first asynchronous reservation, write `disabled_by_script` and read
+   it back before recording that Sceatorio held the pod. A successful `pcall`
+   alone is insufficient because some updatable subclasses ignore writes. If
+   readback confirms the hold, set `cargo_pod_destination` to the reserved exact
+   position when terrain is ready and release only Sceatorio's own hold. If the
+   write is ignored, fail open: keep native descent and use the physical-arrival
+   path after landing. Do not claim that the pod paused.
 4. `on_cargo_pod_finished_descending` is authoritative for a rider landing and
    supplies the pod and optional `player_index`. Finalize/reuse the record,
    resolve a non-colliding character position, set the force spawn for that
    surface, and move any queued teammates.
-5. `on_cargo_pod_delivered_cargo` supplies `spawned_container`; use it to keep a
-   first-arrival cargo container with the player if fallback relocation was
-   necessary.
+5. The pod and its cargo are never deleted or recreated by the spawn path.
 6. `on_player_changed_surface` is the fallback for scripted teleports and
    non-pod travel. Confirm `player.character` exists and use
    `player.character.surface`; remote-view changes must not create a planetary
@@ -174,7 +271,15 @@ does not provide runtime-per-force mod settings.
   used only for personal roboports. It is not a static-network cap setter.
 - `LuaEntity.allow_dispatching_robots` is writable only for Character and
   Vehicle subclasses. It cannot disable a static roboport network.
-- `defines.inventory.roboport_robot` identifies a roboport's robot inventory.
+- `LuaEntity.active` is read-only. Crafting entities instead expose the
+  writable `disabled_by_script` flag, whose previous boolean state can be
+  preserved and restored without touching recipe progress or inventories.
+- Recipe products expose their item prototype; an item's `place_result.type`
+  distinguishes logistic-robot from construction-robot products, including
+  ordinary modded robot recipes.
+- Factorio 2.1.12 has `on_entity_settings_pasted`, but no general recipe-changed
+  event. Manual recipe changes therefore require a bounded registered-machine
+  poll.
 
 There is no 2.1.12 runtime setter for separate static logistic/construction
 network caps. References:
@@ -184,7 +289,10 @@ network caps. References:
 
 ### Accounting hierarchy
 
-On a 300-tick cadence, stagger work across forces and networks:
+Fixed roboports are registered from build, clone, mine, death, script-raised,
+and Space Age platform events. A two-port-per-tick round-robin obtains each
+fixed network's engine-maintained aggregate and deduplicates it by force,
+surface, network id, and game tick:
 
 ```text
 network total        = network.all_logistic_robots
@@ -197,10 +305,12 @@ not a deployed network and should not count. Mobile/personal networks can be
 reported separately; static-server policy should not accidentally penalize
 personal construction equipment.
 
-The monitor fast path is O(forces + networks) per interval and performs no
-entity search. Only an exceeded network enters the slower cell/inventory path.
-Networks split and merge, so cache cursors rather than durable network identity
-and rebuild them safely each cycle.
+The monitor performs no surface entity search and never materializes robot
+entity arrays. Registered-port membership retires a snapshot when its last
+fixed port disappears. During network split/merge discovery the conservative
+old snapshot remains until its registered ports are revisited, avoiding a
+temporary undercount. All network snapshots are then summed force-wide, so
+splitting a network or spreading it across planets cannot evade the cap.
 
 ### Implemented conservative policy
 
@@ -209,57 +319,129 @@ evade them by splitting a network. Static platform roboports are included;
 personal/mobile cells are excluded. Logistic and construction classes are
 counted independently using engine-maintained network aggregates.
 
-| Portal default | Logistic cap | Construction cap |
+| Default mode | Logistic cap | Construction cap |
 | --- | ---: | ---: |
-| `warn` | 500 | 5,000 |
+| `enforce` | 500 | 5,000 |
 
 Do not scale a live hard cap down when players disconnect; that creates surprise
-quarantines. Per-user authoritative caps are impossible because a logistic
+production stops. Per-user authoritative caps are impossible because a logistic
 network does not attribute shared robots to individual players. Use fixed
-server-global defaults plus admin-set per-force overrides. Per-user options are
-only notification/dashboard preferences.
+server-global settings. Per-user options are only notification/dashboard
+preferences.
 
-The runtime mode is `disabled`, `warn`, or `enforce`; `warn` is the portal
-default until the controlled fixture establishes a safe policy on
-representative hardware. Zero means unlimited. A curated dedicated-server
-preset can enable strict enforcement. Wube's own performance work shows that busy robots,
+The runtime mode is `disabled`, `warn`, or `enforce`; `enforce` is the default,
+with warning-only and fully disabled modes retained for server operators. Zero
+means unlimited. Wube's own performance work shows that busy robots,
 jobs, charging, roboport count, and network geometry matter; robots are not
 categorically slower than belts in every factory:
 [FFF-415](https://factorio.com/blog/post/fff-415),
 [FFF-421](https://factorio.com/blog/post/fff-421),
 [FFF-374](https://factorio.com/blog/post/fff-374).
 
-### No-silent-loss enforcement
+### Non-destructive enforcement
 
-Strict mode quarantines **only stationary excess robot stacks**:
+Strict mode never moves, removes, destroys, or hides any robot or item:
 
-1. When a static network exceeds a hard layer, inspect its non-mobile cells.
-2. Read each cell owner's `roboport_robot` inventory. Identify modded robot items
-   by `prototypes.item[item_name].place_result.type == "logistic-robot"` (or
-   `construction-robot` for the separately configured construction policy).
-3. Transfer quality-preserving stacks into a recoverable, force-owned overflow
-   vault until the target is reached. Never destroy or force-mine active robots;
-   later cycles catch them as they dock.
-4. If the vault cannot accept a full stack, leave the remainder in the roboport,
-   keep the violation active, and alert the force/admin. Never discard or
-   silently spill carried items.
-5. Expose status and recovery through localized UI/admin commands. Raising or
-   disabling a cap should return quarantined robots when capacity exists.
-6. `/sceatorio-robot-status` reports policy state and
-   `/sceatorio-robot-recover` returns recoverable vault contents. Vaults migrate
-   on force merge and remain recoverable after surface deletion.
+1. At or above either non-zero force-wide cap, mark that robot class as blocked.
+2. Inspect only registered assembling machines, furnaces, and rocket silos.
+   Classify every current recipe product through
+   `prototypes.item[product.name].place_result.type`, with the standard robot
+   item names as a fallback. Any matching product in a multi-product recipe is
+   sufficient.
+3. Snapshot the machine's exact prior `disabled_by_script` boolean, then set it
+   true. Do not write inventories, recipe progress, productivity, quality, or
+   the read-only `active` property.
+4. Restore the exact prior boolean when totals fall below the relevant cap, the
+   recipe changes, or enforcement is disabled. A clone of a paused machine
+   inherits the source's logical prior state rather than the clone's temporary
+   disabled state.
+5. Existing, flying, manually supplied, imported, and stored robots remain
+   untouched. Manual overflow stays visible, produces a warning, and keeps
+   matching production paused.
+6. Build and settings-paste events evaluate immediately. Because 2.1.12 has no
+   general recipe-change event, a persistent round-robin checks eight registered
+   candidates per tick; diagnostics disclose this bounded delay. Candidate
+   prototypes are prefiltered to crafting categories used by at least one
+   vanilla or modded robot-producing recipe. With `C` candidates, worst-case
+   manual recipe-change detection is `ceil(C / 8)` ticks.
+7. Crossing a cap performs an O(1) force enqueue. A separate priority queue
+   revisits only machines currently known to produce a robot recipe, with one
+   global budget of 32 queue steps per tick and round-robin progress across
+   queued forces. Empty/stale force entries consume that same budget; they
+   cannot turn a settings change involving many teams into an unbounded tick.
+   A stable queued set of `R` robot-recipe machines requires
+   `ceil(R / 32)` processing ticks rather than creating an
+   unbudgeted threshold spike; the ordinary eight-machine recipe poll continues
+   independently.
 
-Do not disable vanilla robot recipes/technologies: that conflicts with research
-and other mods, does not catch imported robots, and cannot distinguish the two
-robot classes reliably.
+Do not disable recipe prototypes or technologies: that conflicts with research
+and other mods. The runtime machine flag is reversible and applies only while a
+currently selected recipe makes a robot class whose team cap is reached.
 
-### Required performance fixture
+### Measured synthetic performance fixture
 
-`matrix.json` keeps robot integration/benchmark cases planned until a controlled
-workload fixture exists. The implementation has static invariants and empty-map
-engine coverage, but those are not robot performance measurements. Use fixed
-seeds and saves, warm the map, then run at least 36,000 ticks
-and five measured repetitions. Vary:
+The exact real-2.1.12 `robot.production-pause-roundtrip` fixture already proves
+same-surface split-network aggregation, non-destructive threshold pause,
+input/progress preservation, exact prior script-disabled restoration, paused
+clone behavior, save/reload continuity, and that robot items are not moved. It
+remains the small correctness test.
+
+The additional exact-2.1.12 `robot.cap-overhead` fixture is a deterministic
+worst-shape policy workload, not a simulated megabase. It creates 64 separate
+fixed networks, docks 499 logistic and 4,999 construction robots, and registers
+1,024 assembling-machine candidates. The candidates comprise 256 logistic
+robot recipes, 256 construction robot recipes, and 512 unrelated recipes. It
+then repeatedly crosses both real defaults (500/5,000), verifies every matching
+producer stops and resumes, verifies every unrelated recipe remains enabled,
+and reloads the enforced checkpoint. No robot array is materialized.
+
+The original 16-port/second monitor took 240 ticks (4.000 s) for each repeated
+worst-position stop/resume transition. Sampling two registered ports per tick
+reduced the repeated transitions to 32 ticks (0.533 s); the first aligned
+transition took 23 ticks. The exact fixture's 64-tick regression bound covers
+the analytical maximum of `ceil(P / 2) + ceil(R / 32)` plus event ordering for
+its `P=64` ports and `R=512` known robot producers. Recurring production work
+is now capped at two port inspections, eight candidate recipe checks, and 32
+threshold-reevaluation queue steps per tick.
+
+Five sanitized 3,600-tick benchmark repetitions on the same synthetic
+checkpoint measured these total-update averages on the audited macOS arm64
+machine:
+
+| Monitor | Runs (ms/update) | Median | 60-UPS budget |
+| --- | --- | ---: | ---: |
+| 16 ports/second (before) | 0.340, 0.341, 0.339, 0.341, 0.343 | 0.341 ms | 2.05% |
+| 2 ports/tick (implemented) | 0.383, 0.368, 0.365, 0.366, 0.370 | 0.368 ms | 2.21% |
+
+The measured median cost of the faster sampling schedule is therefore 0.027
+ms/update, or 0.16% of the 16.667 ms update budget. One implemented run had a
+5.437 ms single-update maximum; the other implemented-run maxima were
+1.504-1.598 ms, so no p95 is inferred from these aggregate CLI results. The
+transition `LuaProfiler` samples include real-time server pacing and fixture
+verification work and are retained as diagnostics, not misreported as isolated
+mod CPU time. All five checksums matched within each build.
+
+Candidate breadth remains intentionally conservative: vanilla robot recipes use
+the general crafting category, so all vanilla assemblers are candidates even
+when their current recipe is unrelated. This costs at most eight recipe checks
+per tick, but a manual recipe switch has worst-case detection latency
+`ceil(C / 8)`; the 1,024-candidate fixture implies 128 ticks (2.133 s). Builds
+and settings-paste events are evaluated immediately, and an already-known robot
+recipe uses the 32-step priority queue when a cap changes.
+
+The cap counts robots in fixed logistic networks, not robot items sitting in
+assemblers, chests, player inventories, or other storage. A craft that completes
+during the bounded network-sample/priority-queue delay can therefore overshoot
+the threshold, and stored output does not itself trigger the cap. Once deployed
+network totals reach the threshold, matching production stops; no existing
+robot or item is deleted to manufacture an instantaneous hard limit.
+
+This synthetic workload keeps all robots docked in unpowered ports. It does not
+measure pathfinding, active jobs, charging congestion, quality variants,
+multiple planets/platforms, or competing mods. `matrix.json` therefore keeps
+the real Space Age active-megabase benchmark explicitly planned. That benchmark
+should use fixed seeds and saves, warm the map, then run at least 36,000 ticks
+and five measured repetitions while varying:
 
 - 1/8/24 forces and 1/5 terrestrial surfaces;
 - one large versus many small roboport networks;
@@ -413,11 +595,13 @@ only until those fixes ship. Do not fork AAI Containers.
 
 ## Prioritized implementation order
 
-1. Add controlled runtime fixtures for simultaneous same-team planet arrivals,
-   cargo-pod holding/release, force merge, surface deletion, and no-silent-loss
-   robot recovery.
-2. Build the controlled robot workload benchmark before changing the `warn`
-   portal default or claiming a server-safe universal cap.
+1. Add real-client coverage for simultaneous rider arrival, cargo-pod
+   hold/readback/fallback, force merge, and surface deletion. Headless core
+   planet reservation and exact robot production restoration now have
+   dedicated checkpoint/reload fixtures.
+2. Build the controlled robot workload benchmark to validate or tune the
+   `enforce` defaults (500 logistic / 5,000 construction) before claiming a
+   server-safe universal cap.
 3. Supply the six pinned third-party archives to the isolated staging command,
    run combined smoke/server/benchmark tests, and reproduce Cargo findings.
 4. Upstream the Cargo hardening patch or pin a minimal GPL fork for public

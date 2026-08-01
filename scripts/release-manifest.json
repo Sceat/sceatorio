@@ -1,0 +1,18 @@
+{
+  "format_version": 1,
+  "root_files": [
+    "LICENSE",
+    "THIRD_PARTY.md",
+    "changelog.txt",
+    "control.lua",
+    "data.lua",
+    "info.json",
+    "settings.lua",
+    "thumbnail.png"
+  ],
+  "trees": {
+    "graphics": [".png"],
+    "locale": [".cfg"],
+    "src": [".lua"]
+  }
+}

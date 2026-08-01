@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "category": "scenarios",
+  "tags": [
+    "enemies",
+    "environment",
+    "logistic-network",
+    "planets",
+    "power"
+  ],
+  "license": "default_mit",
+  "source_url": "https://github.com/Sceat/sceatorio",
+  "files": {
+    "summary": "portal/summary.txt",
+    "description": "portal/description.md",
+    "faq": "portal/faq.md",
+    "thumbnail": "portal/assets/thumbnail-v3.png",
+    "gallery_plan": "portal/gallery-capture.md"
+  }
+}

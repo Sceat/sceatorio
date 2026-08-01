@@ -1,0 +1,12 @@
+{
+  "name": "sceatorio-space-age-planets-fixture",
+  "version": "1.0.0",
+  "title": "Sceatorio Space Age Planet Fixture",
+  "author": "Sceatorio test harness",
+  "factorio_version": "2.1",
+  "dependencies": [
+    "base >= 2.1.12",
+    "space-age >= 2.1.12",
+    "Sceatorio >= 2.0.0"
+  ]
+}
