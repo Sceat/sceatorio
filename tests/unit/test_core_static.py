@@ -21,7 +21,7 @@ class MetadataTests(unittest.TestCase):
         info = json.loads(source("info.json"))
         matrix = json.loads(source("tests/headless/matrix.json"))
         target = matrix["factorio"]["version"]
-        self.assertEqual(info["version"], "2.0.1")
+        self.assertEqual(info["version"], "2.0.2")
         self.assertEqual(info["factorio_version"], ".".join(target.split(".")[:2]))
         self.assertIn(f"base >= {target}", info["dependencies"])
         self.assertIn(f"? space-age >= {target}", info["dependencies"])
@@ -320,7 +320,6 @@ class EvolutionTests(unittest.TestCase):
     def test_connected_time_uses_physical_character_not_remote_view(self) -> None:
         evolution = source("src/game/evo.lua")
         teams = source("src/game/teams.lua")
-        control = source("control.lua")
         players = source("src/game/playerList.lua")
         self.assertIn("player.character", evolution)
         self.assertIn("character.surface", evolution)
@@ -328,12 +327,6 @@ class EvolutionTests(unittest.TestCase):
         self.assertIn("player.character", teams)
         self.assertIn("character.surface.index == surface.index", teams)
         self.assertNotIn("player.surface.index == surface.index", teams)
-        joined = control[control.index("on_player_joined_game"):control.index(
-            "on_player_changed_force"
-        )]
-        self.assertIn("character.surface", joined)
-        self.assertIn("character.position", joined)
-        self.assertNotIn("player.surface", joined)
         self.assertIn("physical_surface", players)
         self.assertIn("Evolution.get_factor(record, physical_surface)", players)
         self.assertNotIn("Evolution.get_factor(record, listed_player.surface)", players)

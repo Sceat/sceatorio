@@ -150,6 +150,27 @@ class SecuritySettingsTests(unittest.TestCase):
         self.assertNotIn("share_chart", radars)
         self.assertNotIn("find_entities_filtered", radars)
 
+    def test_joining_does_not_script_chart_ungenerated_terrain(self) -> None:
+        control = source("control.lua")
+        self.assertNotIn("Radars.chart(player.force", control)
+
+    def test_live_players_only_share_a_bounded_generated_neighborhood(self) -> None:
+        control = source("control.lua")
+        radars = source("src/game/radars.lua")
+        self.assertIn("LIVE_PLAYER_CHUNK_RADIUS = 2", radars)
+        start = radars.index("function Radars.track_connected_players")
+        end = radars.index("function Radars.on_surface_deleted")
+        tracker = radars[start:end]
+        self.assertIn("game.connected_players", tracker)
+        self.assertIn("player.character", tracker)
+        self.assertIn("character.surface", tracker)
+        self.assertIn("surface.is_chunk_generated(position)", tracker)
+        self.assertIn("force.is_chunk_charted(surface, position)", tracker)
+        self.assertIn("enqueue(sync", tracker)
+        self.assertNotIn(".chart(", tracker)
+        self.assertNotIn("request_to_generate_chunks", tracker)
+        self.assertIn("Radars.track_connected_players(event)", control)
+
     def test_team_chart_queue_has_coalesced_backpressure_and_bounded_recovery(self) -> None:
         radars = source("src/game/radars.lua")
         control = source("control.lua")

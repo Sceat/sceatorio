@@ -99,13 +99,6 @@ script.on_event(defines.events.on_player_joined_game, function(event)
   if not (player and player.valid) then return end
   OfflineSecurity.on_player_joined(event)
   PlayerList.on_player_joined(event)
-  local character = player.character
-  if character and character.valid then
-    Radars.chart(player.force, character.surface, {
-      {character.position.x - 200, character.position.y - 200},
-      {character.position.x + 200, character.position.y + 200}
-    })
-  end
   Spawns.on_player_joined(event)
   PlanetSpawns.on_player_joined(event)
   RobotPolicy.on_player_joined(event)
@@ -286,7 +279,10 @@ script.on_event(defines.events.on_tick, function(event)
   AiGateway.poll(event)
 end)
 
-script.on_nth_tick(10 * 60, PlayerList.tick)
+script.on_nth_tick(10 * 60, function(event)
+  Radars.track_connected_players(event)
+  PlayerList.tick(event)
+end)
 
 script.on_event(defines.events.on_gui_click, function(event)
   if not (event.element and event.element.valid) then return end

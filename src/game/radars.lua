@@ -9,6 +9,7 @@ local CATCHUP_CHUNKS_PER_TICK = 16
 local CATCHUP_QUEUE_LOW_WATER = 1024
 local BACKPRESSURE_WARNING_INTERVAL = 10 * 60 * 60
 local SUPPRESSION_GENERATIONS = 2
+local LIVE_PLAYER_CHUNK_RADIUS = 2
 local CHART_UNION_FORCE_NAME = "sceatorio-chart-union"
 local bulk_copying = false
 local catchup_iterators = {}
@@ -50,6 +51,8 @@ local function queue_state()
     total_catchup_scanned = 0,
     total_catchup_passes = 0,
     total_catchup_restarts = 0,
+    total_live_player_chunks_examined = 0,
+    total_live_player_chunks_enqueued = 0,
     max_queue_depth = 0,
     backpressure_active = false,
     last_backpressure_warning_tick = -BACKPRESSURE_WARNING_INTERVAL,
@@ -82,6 +85,8 @@ local function queue_state()
   sync.total_catchup_scanned = sync.total_catchup_scanned or 0
   sync.total_catchup_passes = sync.total_catchup_passes or 0
   sync.total_catchup_restarts = sync.total_catchup_restarts or 0
+  sync.total_live_player_chunks_examined = sync.total_live_player_chunks_examined or 0
+  sync.total_live_player_chunks_enqueued = sync.total_live_player_chunks_enqueued or 0
   sync.max_queue_depth = sync.max_queue_depth or 0
   sync.backpressure_active = sync.backpressure_active or false
   sync.last_backpressure_warning_tick = sync.last_backpressure_warning_tick
@@ -484,6 +489,56 @@ function Radars.tick(event)
   report_recovery(sync)
 end
 
+-- Connected characters reveal a small local neighborhood even without a
+-- radar. Poll that already-generated, already-charted neighborhood at a low
+-- cadence so remote-view state can never hide a player's physical discovery
+-- from the other teams. The fixed 5x5 chunk window is at most 25 checks per
+-- connected player and never asks Factorio to generate or chart new terrain.
+function Radars.track_connected_players(event)
+  local sync = queue_state()
+  local tick = event and event.tick or game.tick
+  local examined = 0
+  local queued = 0
+  for _, player in pairs(game.connected_players) do
+    local record = Teams.get_for_player(player)
+    local force = record and Teams.get_force(record) or nil
+    local character = player.character
+    local surface = character and character.valid and character.surface or nil
+    if force and force.valid and surface and surface.valid then
+      local center_x = math.floor(character.position.x / 32)
+      local center_y = math.floor(character.position.y / 32)
+      for x = center_x - LIVE_PLAYER_CHUNK_RADIUS,
+          center_x + LIVE_PLAYER_CHUNK_RADIUS do
+        for y = center_y - LIVE_PLAYER_CHUNK_RADIUS,
+            center_y + LIVE_PLAYER_CHUNK_RADIUS do
+          local position = {x = x, y = y}
+          examined = examined + 1
+          if surface.is_chunk_generated(position)
+            and force.is_chunk_charted(surface, position) then
+            local result = enqueue(sync, {
+              force = force,
+              surface_index = surface.index,
+              position = position,
+              area = {
+                {x = x * 32, y = y * 32},
+                {x = (x + 1) * 32, y = (y + 1) * 32}
+              },
+              tick = tick
+            }, true)
+            if result == "queued" then queued = queued + 1 end
+          end
+        end
+      end
+    end
+  end
+  sync.total_live_player_chunks_examined =
+    sync.total_live_player_chunks_examined + examined
+  sync.total_live_player_chunks_enqueued =
+    sync.total_live_player_chunks_enqueued + queued
+  sync.last_live_player_tick = tick
+  return {examined = examined, queued = queued}
+end
+
 function Radars.on_surface_deleted(event)
   local sync = queue_state()
   local queue = {}
@@ -546,6 +601,9 @@ function Radars.status()
     total_catchup_scanned = sync.total_catchup_scanned,
     total_catchup_passes = sync.total_catchup_passes,
     total_catchup_restarts = sync.total_catchup_restarts,
+    total_live_player_chunks_examined = sync.total_live_player_chunks_examined,
+    total_live_player_chunks_enqueued = sync.total_live_player_chunks_enqueued,
+    last_live_player_tick = sync.last_live_player_tick,
     last_catchup_surface_index = sync.last_catchup_surface_index,
     last_catchup_chunk = sync.last_catchup_chunk,
     total_backpressure_warnings = sync.total_backpressure_warnings,

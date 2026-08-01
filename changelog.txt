@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.0.2
+Date: 2026-08-01
+  Bugfixes:
+    - Removed the join-time scripted chart request that generated a large expanding area around every connected character.
+    - Restored bounded cross-team player-position discovery using only chunks already generated and charted by the player's force.
+---------------------------------------------------------------------------------------------------
 Version: 2.0.1
 Date: 2026-08-01
   Bugfixes:
