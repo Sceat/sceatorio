@@ -152,7 +152,7 @@
     {
       "id": "exact-runtime",
       "label": "Exact Factorio target",
-      "statement": "The 2.0.0 development line targets the Factorio 2.1.12 runtime and API rather than the older 1.1 Mod Portal line.",
+      "statement": "The 2.x release line targets the Factorio 2.1.12 runtime and API rather than the older 1.1 Mod Portal line.",
       "portal_phrase": "This development line requires Factorio 2.1.12.",
       "evidence": [
         {"path": "info.json", "contains": "base >= 2.1.12"}

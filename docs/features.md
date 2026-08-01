@@ -24,4 +24,4 @@ This is the concise public contract. The implementation and tests referenced in 
 - **Previously accepted implicit power:** Revoking mutual intent makes direct cross-team copper unauthorized and prevents new player/robot implicit overlaps, but an implicit overlap accepted while sharing was active has no direct wire or exact delayed refund and must be relocated manually.
 - **AI control and transport boundary:** No MCP tool moves, mines, crafts, fights, teleports, places entities, runs arbitrary Lua/RCON, or changes generic factory state; the local path requires loopback Lua UDP, one pairing code crosses it once, and bearer credentials never enter UDP or the save.
 - **No public AI endpoint:** The tested release path is a local stdio MCP sidecar over loopback UDP; an internet-facing Streamable HTTP/OAuth deployment is intentionally not shipped by this repository.
-- **Exact Factorio target:** The 2.0.0 development line targets the Factorio 2.1.12 runtime and API rather than the older 1.1 Mod Portal line.
+- **Exact Factorio target:** The 2.x release line targets the Factorio 2.1.12 runtime and API rather than the older 1.1 Mod Portal line.

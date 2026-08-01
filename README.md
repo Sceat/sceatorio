@@ -4,7 +4,7 @@
 
 Sceatorio is a friendly Factorio multiplayer scenario mod for people who want one persistent world without sharing one starting patch or economy. Players create separate forces and distant spawns, or join a friend's team through an owner-approved request.
 
-> The 2.0.0 development line targets Factorio 2.1.12. It is not the older 1.1 Mod Portal release. Space Age 2.1.12 is supported as an optional dependency.
+> The 2.x release line targets Factorio 2.1.12. It is not the older 1.1 Mod Portal release. Space Age 2.1.12 is supported as an optional dependency.
 
 ## What is implemented
 
@@ -31,7 +31,7 @@ Human teams are friendly parallel forces; Sceatorio does not mutate their diplom
 
 ## Install
 
-Once 2.0.0 is published, install `Sceatorio` from Factorio's Mod Portal UI and use Factorio 2.1.12. Space Age may be enabled or omitted.
+Install `Sceatorio` from Factorio's Mod Portal UI and use Factorio 2.1.12. Space Age may be enabled or omitted.
 
 For a local development install, build and copy the exact ZIP without modifying `info.json` or deleting other mod versions:
 
@@ -56,7 +56,7 @@ one bounded integer chunk and routes it through shared discovery; direct
 
 ## AI/MCP status
 
-The repository includes the fail-closed Lua gateway and TypeScript [MCP sidecar](mcp/README.md), with a versioned [security architecture](docs/claude-mcp-architecture-v1.md). The real Factorio 2.1.12 end-to-end test covers one-time pairing, all 24 operation paths, stdio MCP initialization/list/call, scope rejection, replay, expiry, shared per-player quota, and revocation.
+The tagged open-source release includes both the fail-closed Lua gateway and TypeScript [MCP companion](mcp/README.md), with exact Codex setup commands and a versioned [security architecture](docs/claude-mcp-architecture-v1.md). The Mod Portal ZIP remains Factorio-only; it does not make every joining player download Node.js source or dependencies. The real Factorio 2.1.12 end-to-end test covers one-time pairing, all 24 operation paths, stdio MCP initialization/list/call, scope rejection, replay, expiry, shared per-player quota, and revocation.
 
 The human remains the character. No tool moves, mines, crafts, fights, teleports, places entities, runs arbitrary Lua/RCON, or changes generic factory state. The tested release path is local stdio over loopback UDP; an internet-facing Streamable HTTP/OAuth endpoint is not shipped by this repository. See the [end-to-end gate](docs/mcp-e2e-release-gate.md) for the exact evidence and remaining production boundary.
 

@@ -20,9 +20,10 @@ python3 scripts/validate.py
 
 first=$(mktemp -d)
 second=$(mktemp -d)
+version=$(python3 -c 'import json; print(json.load(open("info.json"))["version"])')
 python3 scripts/package.py --output "$first"
 python3 scripts/package.py --output "$second"
-cmp "$first/Sceatorio_2.0.0.zip" "$second/Sceatorio_2.0.0.zip"
+cmp "$first/Sceatorio_${version}.zip" "$second/Sceatorio_${version}.zip"
 ```
 
 Use version-derived paths in real release work rather than copying the example version literally.
@@ -47,8 +48,9 @@ Repository-side protection remains external configuration: protect the default b
 After the source commit is approved, an operator may create and push one tag:
 
 ```sh
-git tag -a v2.0.0 -m "Sceatorio 2.0.0"
-git push origin v2.0.0
+version=$(python3 -c 'import json; print(json.load(open("info.json"))["version"])')
+git tag -a "v${version}" -m "Sceatorio ${version}"
+git push origin "v${version}"
 ```
 
 This repository deliberately does not provide a command that performs those steps. Never retag a published version; increment the version.

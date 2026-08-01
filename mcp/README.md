@@ -1,6 +1,8 @@
 # Sceatorio AI/MCP companion
 
-This directory builds the vendor-neutral TypeScript MCP companion for Sceatorio. It uses the official MCP TypeScript SDK 2.0.0, targets the Factorio 2.1.12 API, and exposes exactly 24 bounded tools. Claude Code is one compatible MCP host. The companion is built separately from this GitHub source and is not embedded in the Factorio Mod Portal ZIP.
+This directory builds the vendor-neutral TypeScript MCP companion for Sceatorio. It uses the official MCP TypeScript SDK 2.0.0, targets the Factorio 2.1.12 API, and exposes exactly 24 bounded tools. Codex and Claude Code are compatible MCP hosts.
+
+The Factorio mod and companion are versioned together in this open-source repository and every tagged source release contains both. The Factorio Mod Portal ZIP intentionally contains only files Factorio can execute or display: the Lua gateway, prototypes, locale, and graphics. Node.js, this TypeScript source, tests, and dependencies stay in the companion and are never added to every joining player's mod download.
 
 The path is fail-closed: both server policies must enable AI Assistance, the force must research the single **AI Assistance** technology, a force-owned Uplink must stay powered, the player must opt in, and the current pairing must contain the requested capability and surface. Factorio re-checks those conditions for every call and atomically enforces total and expensive budgets at both the per-player and save-wide layers. Long event waits count as expensive.
 
@@ -43,9 +45,50 @@ The command prints the server-derived access-grant JSON. Protect it like local c
 - `SCEATORIO_SERVER_POLICY_JSON`: companion policy JSON. It defaults to disabled; the minimal enabled value is `{"enabled":true}`.
 - `SCEATORIO_ACCESS_GRANT_JSON`: the exact JSON printed by the pairing command.
 
-With those values in the MCP host's private environment, run `node mcp/dist/src/index.js` over stdio. For example, Claude Code can register that executable through its normal stdio MCP configuration. Regenerate the grant whenever the player revokes it, its configured lifetime expires, or the team gains authoritative access to a new planet/platform surface. Surface grants are immutable: the new one-time pairing revokes the old binding and includes surfaces known to the team at that moment.
+With those values in the MCP host's private environment, run `node mcp/dist/src/index.js` over stdio. Regenerate the grant whenever the player revokes it, its configured lifetime expires, or the team gains authoritative access to a new planet/platform surface. Surface grants are immutable: the new one-time pairing revokes the old binding and includes surfaces known to the team at that moment.
 
-The pairing code crosses loopback UDP once and is consumed before a binding is created. It is never stored in the save. Bearer tokens and API keys never enter Factorio UDP or save data. Keep both UDP sockets on loopback; they are not an internet authentication boundary.
+The pairing code expires after five minutes of game time and is consumed once. The resulting grant lasts for the server's configured **AI pairing lifetime**, 24 hours by default, unless it is revoked earlier. The code is never stored in the save. Bearer tokens and API keys never enter Factorio UDP or save data. Keep both UDP sockets on loopback; they are not an internet authentication boundary.
+
+## Register with Codex
+
+Build from the checked-out release, then exchange the one-time code while Factorio is running on the same trusted host:
+
+```sh
+cd /absolute/path/to/sceatorio/mcp
+npm ci
+npm run check
+npm run build
+
+SCEATORIO_GRANT="$(
+  SCEATORIO_FACTORIO_PORT=34198 \
+  SCEATORIO_PAIRING_CODE=XXXXX-XXXX-XXXX \
+  node dist/src/pair.js
+)"
+```
+
+Register the absolute compiled entry point and its private environment with Codex:
+
+```sh
+codex mcp add sceatorio \
+  --env SCEATORIO_FACTORIO_PORT=34198 \
+  --env 'SCEATORIO_SERVER_POLICY_JSON={"enabled":true}' \
+  --env "SCEATORIO_ACCESS_GRANT_JSON=$SCEATORIO_GRANT" \
+  -- node "$PWD/dist/src/index.js"
+
+codex mcp list
+unset SCEATORIO_GRANT
+```
+
+`codex mcp add` saves the launch environment, including the scoped grant, in Codex's private local configuration. Do not paste that configuration into issues or logs. Start a new Codex session after adding or replacing the server; an already-running session does not acquire the new process or environment. With Factorio still running, ask the new session to call Sceatorio's `get_session` tool to verify the live connection.
+
+Remove the registration when testing is complete or before installing a replacement grant:
+
+```sh
+codex mcp remove sceatorio
+codex mcp list
+```
+
+A consumed, expired, revoked, or superseded grant cannot be refreshed in place. Create a new code at the powered Uplink, remove the old Codex registration, repeat the exchange and registration commands, then start another new Codex session. Do not expose the Lua UDP port to a remote Codex process; the supported stdio path is deliberately loopback-only.
 
 ## Source of truth
 

@@ -4,7 +4,7 @@
 
 | Line | Status |
 | --- | --- |
-| `master` / 2.0.0 development | Security fixes accepted; targets Factorio 2.1.12. |
+| `master` / 2.x | Security fixes accepted; targets Factorio 2.1.12. |
 | Mod Portal 1.1 releases | Legacy and unsupported. |
 
 ## Reporting a vulnerability
