@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.0.5
+Date: 2026-08-01
+  Bugfixes:
+    - Re-charted generated chunks that are permanently charted but currently fogged, so cross-team player and radar map markers keep refreshing on the 10-second sharing pass.
+    - Stopped the local electricity compatibility audit from counting own-team, neutral, and enemy entities toward its safety bound, which refunded legitimate builds inside dense single-team areas.
+  Changes:
+    - Removed the redundant per-player "Enable AI assistance for me" mod setting. Creating a one-time pairing code at a powered AI Uplink is now the explicit personal opt-in; server policy, research, personal capability allowlists, clipboard-delivery opt-in, and revocation are unchanged.
+    - AI entity inspection, circuit-port, and annotation requests without an authorized surface scope now fail with a clear SURFACE_REQUIRED error.
+    - Failed AI pairing exchange attempts are rate limited to 10 per game minute.
+---------------------------------------------------------------------------------------------------
 Version: 2.0.4
 Date: 2026-08-01
   Bugfixes:
