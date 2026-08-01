@@ -31,11 +31,13 @@ function Chat.on_research_started(event)
   local record = Teams.get_by_force(research.force)
   local starter = record and record.display_name or research.force.name
   for _, player in pairs(game.connected_players) do
-    player.print({
-      "player-started-research",
-      research.localised_name,
-      starter
-    })
+    if player.force.index ~= research.force.index then
+      player.print({
+        "player-started-research",
+        research.localised_name,
+        starter
+      })
+    end
   end
 end
 

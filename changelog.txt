@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.0.4
+Date: 2026-08-01
+  Bugfixes:
+    - Prevented the shared research-start notice from duplicating Factorio's native notice for players on the researching force; other teams and lobby players still receive the cross-team update.
+---------------------------------------------------------------------------------------------------
 Version: 2.0.3
 Date: 2026-08-01
   Bugfixes:
