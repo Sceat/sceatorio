@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .DS_Store
 dist/
+session.md
 .env
 .env.*
 !.env.example
