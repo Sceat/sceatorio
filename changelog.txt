@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.0.1
+Date: 2026-08-01
+  Bugfixes:
+    - Fixed a join-time crash when the shared-chart wrapper received Factorio's positional MapPosition form.
+---------------------------------------------------------------------------------------------------
 Version: 2.0.0
 Date: 2026-08-01
   Major Features:

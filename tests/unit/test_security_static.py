@@ -94,6 +94,23 @@ class ElectricityIsolationTests(unittest.TestCase):
 
 
 class SecuritySettingsTests(unittest.TestCase):
+    def test_chart_wrapper_normalizes_both_map_position_forms(self) -> None:
+        radars = source("src/game/radars.lua")
+        normalizer = re.search(
+            r"local function normalize_map_position\(position\)(.*?)\nend",
+            radars,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(normalizer)
+        body = normalizer.group(1)
+        self.assertIn("position.x", body)
+        self.assertIn("position[1]", body)
+        self.assertIn("position.y", body)
+        self.assertIn("position[2]", body)
+        self.assertGreaterEqual(radars.count("normalize_chart_area("), 3)
+        self.assertIn("{x * 32, y * 32}", radars)
+        self.assertIn("{(x + 1) * 32, (y + 1) * 32}", radars)
+
     def test_settings_are_runtime_global_and_localized(self) -> None:
         settings = source("settings.lua")
         locale = source("locale/en/sceatorio.cfg")

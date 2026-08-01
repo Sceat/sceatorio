@@ -95,6 +95,30 @@ local function queue_depth(sync)
   return math.max(0, #sync.queue - sync.head + 1)
 end
 
+-- Factorio's MapPosition accepts both {x = ..., y = ...} and the positional
+-- {..., ...} form. Normalize at this module boundary before persisting or
+-- doing arithmetic so callers can use either documented representation.
+local function normalize_map_position(position)
+  if type(position) ~= "table" then return nil end
+  local x = position.x
+  local y = position.y
+  if x == nil then x = position[1] end
+  if y == nil then y = position[2] end
+  if type(x) ~= "number" or type(y) ~= "number"
+    or x ~= x or y ~= y
+    or x == math.huge or x == -math.huge
+    or y == math.huge or y == -math.huge then
+    return nil
+  end
+  return {x = x, y = y}
+end
+
+local function normalize_chart_area(area)
+  if type(area) ~= "table" then return nil, nil end
+  return normalize_map_position(area.left_top or area[1]),
+    normalize_map_position(area.right_bottom or area[2])
+end
+
 local function chunk_key(surface_index, position)
   return table.concat({surface_index, position.x, position.y}, ":")
 end
@@ -146,8 +170,7 @@ end
 local function enqueue(sync, event, schedule_catchup)
   local key = chunk_key(event.surface_index, event.position)
   if sync.pending[key] then return "duplicate" end
-  local left_top = event.area.left_top or event.area[1]
-  local right_bottom = event.area.right_bottom or event.area[2]
+  local left_top, right_bottom = normalize_chart_area(event.area)
   if not (left_top and right_bottom) then return "invalid" end
   if queue_depth(sync) >= MAX_PENDING_CHUNKS then
     if schedule_catchup ~= false then
@@ -227,8 +250,7 @@ function Radars.chart(force, surface, area)
   if not (force and force.valid and surface and surface.valid and area) then return 0 end
   if not Teams.get_by_force(force) then return 0 end
 
-  local left_top = area.left_top or area[1]
-  local right_bottom = area.right_bottom or area[2]
+  local left_top, right_bottom = normalize_chart_area(area)
   if not (left_top and right_bottom) then return 0 end
   local chart_area = {
     {x = left_top.x, y = left_top.y},
@@ -278,8 +300,8 @@ function Radars.share_chunk(force_name, surface_identifier, position)
     return {ok = false, error = "bounded integer chunk position required"}
   end
   local queued = Radars.chart(force, surface, {
-    left_top = {x = x * 32, y = y * 32},
-    right_bottom = {x = (x + 1) * 32, y = (y + 1) * 32}
+    {x * 32, y * 32},
+    {(x + 1) * 32, (y + 1) * 32}
   })
   return {ok = true, queued = queued}
 end
