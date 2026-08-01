@@ -16,13 +16,13 @@ smallest thing that works at that scale, and §6 lists what was deliberately not
 |---|---|---|
 | 1 | Build and power an **AI Uplink**, open it | Requires the AI Assistance technology; the GUI is shipped (`src/game/aiGateway.lua` `render_gui`) |
 | 2 | Click **Create pairing code** | 15 chars, `XXXXX-XXXX-XXXX`, single use, **5 game-minutes** (`PAIRING_CODE_LIFETIME_TICKS`) |
-| 3 | Open `https://mcp.sceatorio.aresrpg.world/`, paste the code, press Pair | One static page served by the companion. This is the only reason the page exists |
+| 3 | Open `https://sceatorio-mcp.sceat.xyz/`, paste the code, press Pair | One static page served by the companion. This is the only reason the page exists |
 | 4 | Copy the finished command the page prints and run it | Shown once — the secret is never stored in plaintext or displayed again |
 | 5 | Confirm with `/mcp` in Claude Code | 25 tools appear (`mcp/src/catalog/tools.ts` is the list; do not restate it) |
 
 ```
 claude mcp add --transport http --scope user sceatorio \
-  https://mcp.sceatorio.aresrpg.world/mcp \
+  https://sceatorio-mcp.sceat.xyz/mcp \
   --header "Authorization: Bearer scto_<id>_<secret>"
 ```
 
@@ -50,7 +50,7 @@ admin flipping `sceatorio-ai-enabled` off (revokes everyone — the kill switch)
 | The bearer is minted by the companion, never derived from the code or `bindingId` | Both come from Factorio's deterministic lockstep RNG and are therefore **not secrets** |
 | Pairing page is served by the same process at `/` | Avoids a mod change, avoids teaching players `curl`, and gives the copy button a home |
 | No new kill-switch setting | `sceatorio-ai-enabled` already revokes every binding; deleting the tunnel route already kills the endpoint |
-| Hostname `mcp.sceatorio.aresrpg.world` | `aresrpg.world` is the live Cloudflare zone; no sceatorio zone exists |
+| Hostname `sceatorio-mcp.sceat.xyz` (owner's choice, 2026-08-01) | Single-level subdomain on purpose: Cloudflare Universal SSL covers `zone` and `*.zone` but NOT `*.*.zone`, so a two-level name would need paid Advanced Certificate Manager |
 
 ## 3. Security
 
@@ -127,7 +127,7 @@ requiring the Factorio account name at pairing (public info, no entropy, pure fr
   deploy. Image builds to the in-cluster zot registry and is pinned by digest.
 - No ingress controller and no cert-manager exist. Exposure is a **Cloudflare Tunnel** route,
   added manually in the Zero Trust dashboard:
-  `mcp.sceatorio.aresrpg.world → http://sceatorio-mcp.sceatorio.svc.cluster.local:80`. TLS is
+  `sceatorio-mcp.sceat.xyz → http://sceatorio-mcp.sceatorio.svc.cluster.local:80`. TLS is
   Cloudflare's.
 - The Service is `ClusterIP`, **selector-less**, with a templated `EndpointSlice` pointing at
   `10.0.0.3:34200` — a hostNetwork pod's endpoint IP would otherwise be the public node IP.
