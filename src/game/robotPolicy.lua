@@ -190,10 +190,15 @@ local function refresh_force_state(force_index, issue_warning)
   if threshold_reached(totals.construction, construction_cap()) then
     alerts = alerts + 1
   end
-  local alerts_changed = policy.force_alerts[force_index] ~= alerts
+  local previous_alerts = policy.force_alerts[force_index]
+  local alerts_changed = previous_alerts ~= alerts
   policy.force_alerts[force_index] = alerts
 
-  if issue_warning and mode() ~= "disabled" then
+  -- No permanent counter is drawn any more: a team hears about a cap in chat, and
+  -- only on the recount that crosses into one. warn_at_threshold keeps its own
+  -- per-force, per-kind WARNING_INTERVAL, so a network flapping across the cap
+  -- cannot spam the force even though every crossing is a fresh transition.
+  if issue_warning and mode() ~= "disabled" and alerts > (previous_alerts or 0) then
     warn_at_threshold(
       force_index,
       "logistic",
@@ -674,7 +679,6 @@ local function force_summary(force_index)
     construction = totals.construction,
     available_construction = totals.available_construction,
     networks = totals.networks,
-    alerts = policy.force_alerts[force_index] or 0,
     machines = policy.force_machine_counts[force_index] or 0,
     paused = policy.force_paused_counts[force_index] or 0
   }
@@ -697,28 +701,21 @@ local function summary_caption(summary)
   }
 end
 
+-- Presentation is pull-only: the policy owns no permanent screen real estate, so
+-- this just keeps an already-open /sceatorio-robot-status frame honest.
 function RobotPolicy.update_gui(player)
   if not (player and player.valid) then return end
-  local button = player.gui.top.sceatorio_robot_policy_status
+  local frame = player.gui.screen.sceatorio_robot_policy_frame
+  if not (frame and frame.valid) then return end
   local record = Teams.get_for_player(player)
   if mode() == "disabled" or not record then
-    if button then button.visible = false end
-    local frame = player.gui.screen.sceatorio_robot_policy_frame
-    if frame then frame.visible = false end
+    frame.visible = false
     return
   end
-  local summary = force_summary(player.force.index)
-  if not button then
-    button = player.gui.top.add({
-      type = "button",
-      name = "sceatorio_robot_policy_status",
-      caption = {"sceatorio.robot-policy-button", summary.alerts},
-      tags = {sceatorio_action = "robot_policy_status"}
-    })
+  local label = frame.sceatorio_robot_policy_summary
+  if label and label.valid then
+    label.caption = summary_caption(force_summary(player.force.index))
   end
-  button.visible = true
-  button.caption = {"sceatorio.robot-policy-button", summary.alerts}
-  button.tooltip = summary_caption(summary)
 end
 
 update_force_gui = function(force)
@@ -997,10 +994,7 @@ function RobotPolicy.on_gui_click(event)
   if not (element and element.valid) then return false end
   local action = (element.tags or {}).sceatorio_action
   local player = game.players[event.player_index]
-  if action == "robot_policy_status" then
-    show_status_frame(player)
-    return true
-  elseif action == "robot_policy_close" then
+  if action == "robot_policy_close" then
     local frame = player.gui.screen.sceatorio_robot_policy_frame
     if frame then frame.visible = false end
     return true

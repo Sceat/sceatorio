@@ -409,6 +409,33 @@ class PlayerListTests(unittest.TestCase):
         self.assertNotIn('type = "scroll-pane"', players)
         self.assertNotIn("player.gui.top.add", players)
 
+    def test_panel_hugs_the_free_corner_and_stays_compact(self) -> None:
+        players = source("src/game/playerList.lua")
+        blueprints = source("src/game/aiBlueprintGui.lua")
+        # The old offset only existed to clear the retired robot status button.
+        self.assertNotIn("TOP_OFFSET = 52", players)
+        self.assertIn("TOP_INSET = 8", players)
+        self.assertIn("TOP_CLEARANCE = 52", players)
+        self.assertIn("y = math.floor(top_offset(player) * scale)", players)
+        # The clearance is measured, not assumed: it applies only while some mod
+        # actually occupies player.gui.top.
+        offset = re.search(
+            r"local function top_offset\(player\)(.*?)\nend",
+            players,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(offset)
+        self.assertIn("player.gui.top.children", offset.group(1))
+        self.assertIn("return TOP_CLEARANCE", offset.group(1))
+        self.assertIn("return TOP_INSET", offset.group(1))
+        self.assertIn("style(panel, {padding = 2})", players)
+        self.assertIn("vertical_spacing = 0", players)
+        self.assertNotIn("padding = 4", players)
+        # The inbox button docks off the live panel position, so it follows.
+        self.assertIn("panel.location.x + math.floor((width + GAP) * scale)", blueprints)
+        self.assertIn("y = panel.location.y", blueprints)
+        self.assertIn("PLAYER_PANEL_TOP_OFFSET = 8", blueprints)
+
     def test_player_list_never_writes_scroll_policy_through_luastyle(self) -> None:
         players = source("src/game/playerList.lua")
         # Factorio 2.1 exposes these on LuaGuiElement, not LuaStyle. Writing

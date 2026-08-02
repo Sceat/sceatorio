@@ -7,7 +7,14 @@ local PlayerList = {}
 local PANEL_NAME = "sceatorio_player_panel"
 local PANEL_WIDTH = 340
 local MINIMUM_PANEL_WIDTH = 260
-local TOP_OFFSET = 52
+-- Factorio 2.1 keeps its own controls out of the upper-left corner (the engine
+-- buttons sit above the minimap on the right, the shortcut bar at the bottom),
+-- and no vanilla script writes to player.gui.top. The panel therefore mirrors
+-- its own left inset when that flow is empty, and only drops below one
+-- mod-button row (mod_gui_button is 40 high, plus the flow's own padding) when
+-- something -- another mod, or our admin dev menu -- actually occupies it.
+local TOP_INSET = 8
+local TOP_CLEARANCE = 52
 local VIEWERS_PER_REFRESH = 4
 local PLAYERS_PER_GROUP_PAGE = 6
 
@@ -137,25 +144,38 @@ local function format_time(ticks)
   return string.format("%dh:%02dm", hours, minutes)
 end
 
+local function top_offset(player)
+  for _, element in pairs(player.gui.top.children) do
+    if element.valid and element.visible then return TOP_CLEARANCE end
+  end
+  return TOP_INSET
+end
+
 local function position_panel(player, panel)
   local scale = player.display_scale > 0 and player.display_scale or 1
   local logical_width = player.display_resolution.width / scale
   local width = math.min(PANEL_WIDTH, math.max(MINIMUM_PANEL_WIDTH, logical_width - 24))
   panel.style.width = width
   panel.location = {
-    -- Keep the compact status panel beside Factorio's upper-left controls.
+    -- Keep the compact status panel in Factorio's free upper-left corner.
     x = math.floor(8 * scale),
-    y = math.floor(TOP_OFFSET * scale)
+    y = math.floor(top_offset(player) * scale)
   }
 end
 
+-- Every upper-left leftover from an earlier Sceatorio dies here, so a save made
+-- before this version stops showing it the moment the mod loads or a player
+-- joins. The robot policy no longer draws a permanent status button; it reports
+-- a reached cap in chat instead.
+local LEGACY_TOP_NAMES = {"playerList", "sceatorio", "sceatorio_robot_policy_status"}
+
 local function destroy_legacy(player)
-  local legacy_top = player.gui.top.playerList
+  for _, name in ipairs(LEGACY_TOP_NAMES) do
+    local element = player.gui.top[name]
+    if element and element.valid then element.destroy() end
+  end
   local legacy_pane = player.gui.left["playerList-panel"]
-  local legacy_container = player.gui.top.sceatorio
-  if legacy_top and legacy_top.valid then legacy_top.destroy() end
   if legacy_pane and legacy_pane.valid then legacy_pane.destroy() end
-  if legacy_container and legacy_container.valid then legacy_container.destroy() end
 end
 
 local function create_group(list, group_name, caption)
@@ -207,12 +227,15 @@ local function create_group(list, group_name, caption)
     direction = "vertical"
   })
 
-  style(group, {horizontally_stretchable = true})
+  -- Flows default to 4px between children; the rows are single-line labels that
+  -- already carry their own line height, so the list reads denser without any
+  -- font change.
+  style(group, {horizontally_stretchable = true, vertical_spacing = 2})
   style(header, {vertical_align = "center", horizontally_stretchable = true})
   style(count, {font = "default-semibold", horizontally_stretchable = true})
   style(previous, {width = 28})
   style(following, {width = 28})
-  style(group.entries, {horizontally_stretchable = true})
+  style(group.entries, {horizontally_stretchable = true, vertical_spacing = 0})
 end
 
 local function create_list(panel)
@@ -225,7 +248,7 @@ local function create_list(panel)
   })
   create_group(list, "online", "sceatorio.online-players")
   create_group(list, "offline", "sceatorio.offline-players")
-  style(list, {horizontally_stretchable = true})
+  style(list, {horizontally_stretchable = true, vertical_spacing = 4})
 end
 
 local function update_toggle(panel)
@@ -341,7 +364,7 @@ function PlayerList.create_container(player)
     direction = "vertical"
   })
   panel.auto_center = false
-  style(panel, {padding = 4})
+  style(panel, {padding = 2})
   position_panel(player, panel)
 
   local header = panel.add({name = "header", type = "flow", direction = "horizontal"})

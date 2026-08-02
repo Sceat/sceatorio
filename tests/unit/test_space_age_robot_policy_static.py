@@ -193,6 +193,47 @@ class RobotPolicyTests(unittest.TestCase):
             ),
         )
 
+    def test_policy_owns_no_permanent_screen_element(self) -> None:
+        policy = source("src/game/robotPolicy.lua")
+        players = source("src/game/playerList.lua")
+        locale = source("locale/en/sceatorio.cfg")
+        # The permanent "Robots: N alerts" button is gone: no gui.top element is
+        # created, its caption string is retired, and the player list reaps the
+        # one a pre-existing save still has.
+        self.assertNotIn("gui.top", policy)
+        self.assertNotIn("robot-policy-button", policy)
+        self.assertNotIn("robot-policy-button", locale)
+        self.assertNotIn('sceatorio_action = "robot_policy_status"', policy)
+        self.assertIn("sceatorio_robot_policy_status", players)
+        self.assertIn("LEGACY_TOP_NAMES", players)
+        self.assertIn("element.destroy()", players)
+
+    def test_cap_report_is_a_rate_limited_transition_only_chat_message(self) -> None:
+        policy = source("src/game/robotPolicy.lua")
+        locale = source("locale/en/sceatorio.cfg")
+        self.assertIn("WARNING_INTERVAL = 60 * 60", policy)
+        warn = re.search(
+            r"local function warn_at_threshold\((.*?)\n(.*?)\nend",
+            policy,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(warn)
+        body = warn.group(2)
+        # Same shape as security.lua: a stored per-key tick gates the print.
+        self.assertIn("if not threshold_reached(total, cap) then return end", body)
+        self.assertIn("policy.warning_ticks[warning_key] or -WARNING_INTERVAL", body)
+        self.assertIn("if game.tick - last_tick < WARNING_INTERVAL then return end", body)
+        self.assertIn("force.print({", body)
+        self.assertIn('"sceatorio.robot-cap-warning"', body)
+        # Only a recount that crosses into a new capped class reports.
+        self.assertIn(
+            "if issue_warning and mode() ~= \"disabled\" "
+            "and alerts > (previous_alerts or 0) then",
+            policy,
+        )
+        for key in ("robot-cap-warning", "robot-kind-logistic", "robot-kind-construction"):
+            self.assertIn(key, locale)
+
     def test_build_remove_tick_gui_and_lifecycle_paths_are_wired(self) -> None:
         control = source("control.lua")
         for event in (
