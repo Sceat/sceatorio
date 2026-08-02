@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.2.0
+Date: 2026-08-02
+  Features:
+    - Server operators can now read the map-sharing counters from a running save through the "sceatorio_radars" remote interface: passes, players and radars used as sources, chunks examined, chart writes, and remote requests and rejections. The mod already counted all of it, but nothing handed the numbers back, so diagnosing how much map traffic sharing costs meant guessing.
+  Changes:
+    - Pairing your AI assistant is now permanent. A link no longer dies after a day, and the companion remembers it across server restarts, so you pair once at the AI Uplink instead of re-pairing every time the server comes back. Revoking at the Uplink is how a pairing ends; re-pairing, changing team, leaving, and the admin kill switch still revoke on the spot, and a revoked pairing stays refused even if the server restarts a second later.
+    - Removed the permanent "Robots: N alerts" button from the top of the screen. A control that reads zero all day is not news; reaching a cap is. Your team is now told in chat when it crosses a robot cap, at most once a game-minute per robot class, and the full breakdown is still available on demand with /sceatorio-robot-status.
+    - The player list moved up into the free upper-left corner and its rows are tighter, since it no longer has to leave room for the robot button underneath. It drops back to its old lower position only when another mod actually puts a button up there.
+    - The saved AI blueprint panel is now a grid of slots like the blueprint library, one icon per blueprint drawn from what that blueprint actually contains, with its revision, entity count, footprint and contents moved into the tooltip instead of a clipped row of text. Clicking a slot puts a real blueprint straight in your hand, ready to place, rather than on your clipboard; if your cursor is already holding something it says so instead of quietly swallowing the click.
+---------------------------------------------------------------------------------------------------
 Version: 2.1.1
 Date: 2026-08-02
   Bugfixes:

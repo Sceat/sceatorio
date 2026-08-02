@@ -1,7 +1,8 @@
 # Remote pairing: a player links their own Claude to the server
 
-Status: DESIGN, 2026-08-01. Not implemented. This file is the single source of truth for the
-feature; it links to the contracts it depends on instead of copying them.
+Status: IMPLEMENTED, 2026-08-02. Built, deployed and live at `https://sceatorio-mcp.sceat.xyz`.
+This file is the single source of truth for the feature; it links to the contracts it depends on
+instead of copying them.
 
 **What the service is:** one small HTTPS endpoint, run beside the game server, that turns a
 one-time code from the in-game AI Uplink into a bearer credential a player pastes into their own
