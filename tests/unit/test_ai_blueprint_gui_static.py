@@ -359,6 +359,140 @@ class AiBlueprintGuiTests(unittest.TestCase):
         self.assertNotIn("inbox.by_id", delete_book)
         self.assertIn("releasedMemberCount = #book.members", delete_book)
 
+    def test_books_render_first_and_their_members_leave_the_flat_list(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        records = block(gui, "local function inbox_records(player_index)")
+        # Books are appended before the flat run, so every book precedes every
+        # bookless blueprint in the rendered order.
+        self.assertLess(
+            records.index("records[#records + 1] = {id = book.id, name = book.name}"),
+            records.index("for index = #inbox.order, 1, -1 do"),
+        )
+        # Both groups walk their own order table backwards: newest first, which
+        # is the only ordering either loop can produce.
+        self.assertIn("for index = #inbox.book_order, 1, -1 do", records)
+        self.assertIn("for index = #inbox.order, 1, -1 do", records)
+        # Membership is collected from the books this open really renders -- the
+        # marking sits inside the same guard that decided to render the book, so
+        # a malformed book hides nothing and its members stay visible.
+        self.assertRegex(
+            records,
+            re.compile(
+                r'if type\(book\) == "table" and type\(book\.members\) == "table" then\s+'
+                r"records\[#records \+ 1\] = \{id = book\.id, name = book\.name\}\s+"
+                r"(?:--[^\n]*\n\s+)*"
+                r"for _, member_id in ipairs\(book\.members\) do in_a_book\[member_id\] = true end",
+                re.S,
+            ),
+        )
+        # And the flat run is exactly the bookless remainder.
+        self.assertIn("if not in_a_book[id] then", records)
+        self.assertLess(
+            records.index("if not in_a_book[id] then"),
+            records.index("records[#records + 1] = {id = record.id, name = record.name}"),
+        )
+
+    def test_a_blueprint_in_two_books_is_hidden_once_and_still_in_both(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        records = block(gui, "local function inbox_records(player_index)")
+        # Membership, not a reference count: the mark is a plain set write, so a
+        # blueprint two books name is marked twice to the same value and drops
+        # out of the flat run exactly once. Any counter here would be a bug --
+        # decrementing it would put the blueprint back in the flat list while it
+        # is still inside a book.
+        self.assertIn("in_a_book[member_id] = true", records)
+        self.assertEqual(
+            re.findall(r"in_a_book\[[^\]]*\]\s*=\s*(\S+)", records),
+            ["true"],
+        )
+        self.assertNotRegex(records, r"in_a_book\[[^\]]*\][^\n]*[-+]\s*1")
+        # The books themselves are untouched by hiding: each still renders from
+        # its own live member list, so the shared blueprint is a page in both.
+        self.assertNotRegex(records, r"table\.(insert|remove)")
+        self.assertIn("Blueprints.load_book(", gui)
+        # Bounded by storage's caps, never a scan of the whole inbox per book.
+        self.assertIn("for _, member_id in ipairs(book.members) do", records)
+        self.assertNotIn("while", records)
+
+    def test_deleting_a_book_unhides_its_members_with_no_bookkeeping(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        records = block(gui, "local function inbox_records(player_index)")
+        # The membership set is a local rebuilt on every open from live storage
+        # and never persisted, so a book deleted by the MCP tool or carried out
+        # of this window simply is not in book_order the next time this runs, and
+        # its blueprints reappear in the flat run on their own. Nothing has to
+        # remember to un-hide them.
+        self.assertIn("local in_a_book = {}", records)
+        self.assertNotRegex(gui, r"(?<!local )in_a_book\s*=")
+        for persisted in ("root.in_a_book", "State.set", "in_a_book)"):
+            self.assertNotIn(persisted, gui)
+        # fill re-derives the list on every open; nothing survives between two.
+        fill = block(gui, "local function fill(player, inventory)")
+        self.assertIn("local records = inbox_records(player.index)", fill)
+        # And the module that owns the deletion keeps the members it grouped.
+        blueprints = source("src/game/aiBlueprints.lua")
+        delete_book = blueprints[blueprints.index("function Blueprints.delete_book"):]
+        delete_book = delete_book[: delete_book.index("\nend\n")]
+        self.assertNotIn("inbox.by_id", delete_book)
+        self.assertIn("inbox.books[book_id] = nil", delete_book)
+
+    def test_a_hidden_record_can_never_be_reached_by_the_delete_path(self) -> None:
+        # THE property. Hiding a blueprint means its stack is never written into
+        # the inventory, so a close that reconciled by "what is missing from the
+        # inventory" would read every hidden member as carried out and delete the
+        # player's saved work wholesale. It cannot, because reconciliation reads
+        # the manifest and nothing else, and the manifest only ever learns an ID
+        # that was rendered.
+        gui = source("src/game/aiBlueprintGui.lua")
+        fill = block(gui, "local function fill(player, inventory)")
+        release = block(gui, "local function release(player, inventory, reconcile)")
+
+        # 1. The manifest is written in exactly one place: fill's write loop.
+        self.assertEqual(gui.count("store[player.index] = manifest"), 1)
+        self.assertIn("store[player.index] = manifest", fill)
+        self.assertEqual(len(re.findall(r"(?<!local )manifest\[[^\]]*\]\s*=", gui)), 1)
+        self.assertIn("manifest[record.name] = {count = 1, id = record.id}", fill)
+
+        # 2. The only ID that loop can store is one inbox_records handed it, and
+        #    it stores it only after the stack really landed in a slot.
+        self.assertEqual(
+            sorted(set(re.findall(r"\bid = ([\w.]+)", fill))),
+            ["nil", "record.id"],
+        )
+        self.assertIn("local record = records[index]", fill)
+        self.assertRegex(
+            fill,
+            re.compile(
+                r"if not write_stack\(player, inventory\[index\], record\.id\) then\s+"
+                r"failures = failures \+ 1\s+"
+                r'elseif type\(record\.name\) == "string" then',
+                re.S,
+            ),
+        )
+
+        # 3. Reconciliation deletes nothing but an ID it read out of that
+        #    manifest -- no name lookup, no inbox walk, no second record list.
+        self.assertIn("for name, entry in pairs(manifest) do", release)
+        self.assertEqual(
+            re.findall(r"Blueprints\.delete(?:_book)?, \{player_index = player\.index\}, ([\w.]+)", release),
+            ["entry.id", "entry.id"],
+        )
+        # Those two are the module's only removal call sites, full stop.
+        call_site = r"Blueprints\.delete(?:_book)?, \{player_index"
+        self.assertEqual(len(re.findall(call_site, release)), 2)
+        self.assertEqual(len(re.findall(call_site, gui)), 2)
+
+        # 4. The close path never re-derives what the inbox holds, so it has no
+        #    way to name a record this open chose not to render, and it never
+        #    reaches into a book's members either.
+        for unreachable in ("inbox_records", "inbox.by_id", "inbox.order", "in_a_book", "members"):
+            self.assertNotIn(unreachable, release)
+        closed = block(gui, "function AiBlueprintGui.on_gui_closed(event)")
+        self.assertNotIn("inbox_records", closed)
+        # members are read in exactly one place, and it is the render list.
+        self.assertEqual(gui.count("book.members"), 2)
+        self.assertIn("book.members", block(gui, "local function inbox_records(player_index)"))
+
     def test_the_window_never_edits_inbox_storage_itself(self) -> None:
         gui = source("src/game/aiBlueprintGui.lua")
         self.assertIn("Blueprints.delete", gui)

@@ -16,7 +16,10 @@ local ACTION_TOGGLE = "sceatorio_ai_blueprints_toggle"
 -- aiBlueprints caps an inbox at 100 blueprints and 20 books; the inventory is
 -- resized down to the records actually stored, so this is only the ceiling --
 -- but it has to cover both collections at once, or grouping blueprints into a
--- book would silently push the oldest blueprints out of the window.
+-- book would silently push the oldest blueprints out of the window. 20 + 100 is
+-- exactly this ceiling, and hiding a book's members only ever shrinks the set
+-- below it, so the truncation this bounds cannot happen -- it stays as the
+-- defence that makes an unrenderable record unreachable by the close.
 local MAX_SLOTS = 120
 local BUTTON_SIZE = 40
 local GAP = 8
@@ -93,6 +96,11 @@ end
 -- Books come first because they are the coarser thing to reach for, and both
 -- kinds are flattened into one list of {id, name} so every slot below is
 -- written the same way; the ID prefix is what tells the two apart.
+-- A blueprint filed in a book is reached by opening that book, so listing it
+-- flat as well would show the same saved blueprint twice. The flat run is
+-- therefore the bookless remainder: every book, then the blueprints no book
+-- holds. The MCP catalog is untouched by this -- list_ai_blueprints stays the
+-- complete flat truth plus the books array, because that is what tooling reads.
 local function inbox_records(player_index)
   local root = State.get()
   local ai = root and root.ai or nil
@@ -102,6 +110,12 @@ local function inbox_records(player_index)
     or type(inbox.order) ~= "table"
     or type(inbox.by_id) ~= "table" then return {} end
   local records = {}
+  -- Filled by the book walk below and read by the flat walk after it, so a
+  -- blueprint is only ever hidden by a book that this same open really renders:
+  -- a malformed book is skipped, and its members stay visible rather than
+  -- becoming unreachable. Recomputed from live storage every open, which is why
+  -- deleting a book un-hides its members with no bookkeeping at all.
+  local in_a_book = {}
   -- Storage keeps both collections oldest-first; walk them backwards for
   -- newest-first. Books are rebuilt from their live member list on every open,
   -- so a book edited since the last open renders with its current pages.
@@ -110,13 +124,20 @@ local function inbox_records(player_index)
       local book = inbox.books[inbox.book_order[index]]
       if type(book) == "table" and type(book.members) == "table" then
         records[#records + 1] = {id = book.id, name = book.name}
+        -- Membership, never a count: a blueprint two books name is marked once
+        -- here, stays out of the flat run once, and still appears inside both
+        -- books. Bounded by storage's own caps -- 20 books of at most 50 members.
+        for _, member_id in ipairs(book.members) do in_a_book[member_id] = true end
       end
     end
   end
   for index = #inbox.order, 1, -1 do
-    local record = inbox.by_id[inbox.order[index]]
-    if type(record) == "table" and type(record.revisions) == "table" then
-      records[#records + 1] = {id = record.id, name = record.name}
+    local id = inbox.order[index]
+    if not in_a_book[id] then
+      local record = inbox.by_id[id]
+      if type(record) == "table" and type(record.revisions) == "table" then
+        records[#records + 1] = {id = record.id, name = record.name}
+      end
     end
   end
   return records
@@ -325,6 +346,11 @@ end
 -- a rebuild that failed and a record past MAX_SLOTS are simply not in it -- and
 -- what is not in the manifest is never deleted by the close. Bounded twice: by
 -- the caller's own inbox and by MAX_SLOTS.
+-- This loop is the ONLY writer of a manifest entry's id, and it can only ever
+-- write an id inbox_records returned. That is what makes hiding a book's
+-- members safe: a hidden member is not in `records`, so its id never reaches
+-- the manifest, so release -- which deletes nothing but `entry.id` -- has no
+-- way to name it. Never rendered is never deletable, by construction.
 local function fill(player, inventory)
   local records = inbox_records(player.index)
   local walked = reclaim(player, inventory, stored_manifest(player.index))
