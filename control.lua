@@ -12,6 +12,7 @@ local PlanetSpawns = require("src.game.planetSpawns")
 local RobotPolicy = require("src.game.robotPolicy")
 local TestMenu = require("src.game.testMenu")
 local AiGateway = require("src.game.aiGateway")
+local AiBlueprintGui = require("src.game.aiBlueprintGui")
 
 require("src.game.admin")
 
@@ -52,6 +53,7 @@ local function initialize_common()
   TestMenu.initialize()
   PlayerList.initialize()
   AiGateway.initialize()
+  AiBlueprintGui.initialize()
 end
 
 script.on_init(function()
@@ -101,6 +103,7 @@ script.on_event(defines.events.on_player_joined_game, function(event)
   TestMenu.on_player_joined(event)
   Evolution.sync_connected(event.tick)
   AiGateway.on_player_joined(event)
+  AiBlueprintGui.on_player_joined(event)
 end)
 
 script.on_event(defines.events.on_player_changed_force, function(event)
@@ -112,6 +115,7 @@ script.on_event(defines.events.on_player_changed_force, function(event)
   TestMenu.on_player_changed_force(event)
   PlayerList.on_player_changed(event)
   AiGateway.on_player_changed_force(event)
+  AiBlueprintGui.on_player_changed_force(event)
 end)
 
 script.on_event(defines.events.on_player_changed_surface, function(event)
@@ -141,7 +145,10 @@ for _, event_id in pairs({
   if event_id then display_events[#display_events + 1] = event_id end
 end
 if #display_events > 0 then
-  script.on_event(display_events, PlayerList.on_display_changed)
+  script.on_event(display_events, function(event)
+    PlayerList.on_display_changed(event)
+    AiBlueprintGui.on_display_changed(event)
+  end)
 end
 if defines.events.on_cargo_pod_finished_descending then
   script.on_event(
@@ -161,7 +168,10 @@ script.on_event(defines.events.on_research_started, function(event)
   Chat.on_research_started(event)
   AiGateway.on_research_started(event)
 end)
-script.on_event(defines.events.on_research_finished, AiGateway.on_research_finished)
+script.on_event(defines.events.on_research_finished, function(event)
+  AiGateway.on_research_finished(event)
+  AiBlueprintGui.on_research_finished(event)
+end)
 script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
   Evolution.on_setting_changed(event)
   OfflineSecurity.on_setting_changed(event)
@@ -169,6 +179,7 @@ script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
   RobotPolicy.on_setting_changed(event)
   TestMenu.on_setting_changed(event)
   AiGateway.on_setting_changed(event)
+  AiBlueprintGui.on_setting_changed(event)
 end)
 script.on_event(defines.events.on_surface_created, function(event)
   Teams.on_surface_created(event)
@@ -282,7 +293,9 @@ end)
 
 script.on_event(defines.events.on_gui_click, function(event)
   if not (event.element and event.element.valid) then return end
-  if PlayerList.on_gui_click(event) then
+  if AiBlueprintGui.on_gui_click(event) then
+    return
+  elseif PlayerList.on_gui_click(event) then
     return
   elseif TestMenu.on_gui_click(event) then
     return
