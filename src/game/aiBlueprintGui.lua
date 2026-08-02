@@ -6,7 +6,18 @@ local AiBlueprintGui = {}
 
 local BUTTON_NAME = "sceatorio_ai_blueprint_button"
 local FRAME_NAME = "sceatorio_ai_blueprint_frame"
-local ROWS_PER_PAGE = 6
+-- The panel is a slot grid, not a list: six slots per row like the vanilla
+-- blueprint book, two rows per page, so a full 100-blueprint inbox still builds
+-- a constant number of elements per render.
+local SLOT_COLUMNS = 6
+local SLOTS_PER_PAGE = 12
+local SLOT_SIZE = 48
+local SLOT_LABEL_WIDTH = 88
+local FRAME_WIDTH = 640
+-- Vanilla shows at most four icons per blueprint; a sprite-button carries one
+-- sprite, so the leading prototype becomes the slot icon and the rest of the
+-- ranking is spelled out in the tooltip.
+local MAX_ICONS = 4
 local BUTTON_SIZE = 40
 local GAP = 8
 -- The player list owns the upper-left corner; these mirror its own geometry so
@@ -14,7 +25,10 @@ local GAP = 8
 local PLAYER_PANEL_NAME = "sceatorio_player_panel"
 local PLAYER_PANEL_FALLBACK_WIDTH = 340
 local PLAYER_PANEL_LEFT_OFFSET = 8
-local PLAYER_PANEL_TOP_OFFSET = 52
+-- Only a fallback: the live panel position wins whenever the panel exists, and
+-- the player list now hugs the free upper-left corner instead of clearing a
+-- status button that no longer exists.
+local PLAYER_PANEL_TOP_OFFSET = 8
 
 local ACTION_TOGGLE = "sceatorio_ai_blueprints_toggle"
 local ACTION_CLOSE = "sceatorio_ai_blueprints_close"
@@ -27,6 +41,13 @@ local ACTION_LOAD = "sceatorio_ai_blueprints_load"
 local BUTTON_SPRITES = {
   "technology/" .. AiConstants.TECHNOLOGY,
   "item/" .. AiConstants.UPLINK,
+  "utility/side_menu_blueprint_library_icon"
+}
+
+-- Fallback for a slot whose entities resolve to no drawable prototype icon at
+-- all: the panel still shows a blueprint-shaped slot instead of an empty one.
+local GENERIC_SPRITES = {
+  "item/blueprint",
   "utility/side_menu_blueprint_library_icon"
 }
 
@@ -64,12 +85,33 @@ local function available(player)
     and technology_researched(player.force)
 end
 
-local function button_sprite()
-  for _, path in ipairs(BUTTON_SPRITES) do
+-- Every sprite this panel draws is prototype-derived, so nothing may reach an
+-- element before the running Factorio confirms it: an unknown prototype must
+-- degrade to the next candidate, never raise inside the click that drew it.
+local function first_valid_sprite(paths)
+  for _, path in ipairs(paths) do
     local ok, valid = pcall(helpers.is_valid_sprite_path, path)
     if ok and valid then return path end
   end
   return nil
+end
+
+local function button_sprite()
+  return first_valid_sprite(BUTTON_SPRITES)
+end
+
+-- A style NAME the running Factorio does not define raises inside add(), which
+-- is the same crash class that bricked 2.1.0 through a style read. Retrying
+-- without the style keeps the panel alive on an engine that renamed one.
+local function add(parent, spec)
+  if spec.style == nil then return parent.add(spec) end
+  local ok, element = pcall(function() return parent.add(spec) end)
+  if ok and element then return element end
+  local plain = {}
+  for key, value in pairs(spec) do
+    if key ~= "style" then plain[key] = value end
+  end
+  return parent.add(plain)
 end
 
 -- Read-only view of the same storage Blueprints owns. The GUI never creates or
@@ -145,74 +187,180 @@ local function number(value)
   return type(value) == "number" and value or 0
 end
 
-local function add_row(container, record)
+-- One pass over the stored layout yields everything a slot shows: the icon
+-- ranking, the entity count and the tile footprint. The ranking is sorted by
+-- count and then by prototype name, so the same record always draws the same
+-- slot for every player.
+local function summarize(layout)
+  local counts = {}
+  local names = {}
+  local total = 0
+  local min_x, min_y, max_x, max_y
+  local entities = type(layout) == "table" and type(layout.entities) == "table"
+    and layout.entities or {}
+  for _, entity in ipairs(entities) do
+    local prototype = type(entity) == "table" and entity.prototype or nil
+    if type(prototype) == "string" then
+      total = total + 1
+      if counts[prototype] == nil then
+        counts[prototype] = 0
+        names[#names + 1] = prototype
+      end
+      counts[prototype] = counts[prototype] + 1
+      local position = entity.position
+      if type(position) == "table"
+        and type(position.x) == "number" and type(position.y) == "number" then
+        min_x = min_x and math.min(min_x, position.x) or position.x
+        min_y = min_y and math.min(min_y, position.y) or position.y
+        max_x = max_x and math.max(max_x, position.x) or position.x
+        max_y = max_y and math.max(max_y, position.y) or position.y
+      end
+    end
+  end
+  table.sort(names, function(left, right)
+    if counts[left] ~= counts[right] then return counts[left] > counts[right] end
+    return left < right
+  end)
+  -- Stored positions are entity centers, so the tile span is the rounded
+  -- distance between the outermost centers plus the entity they sit on.
+  return {
+    total = total,
+    names = names,
+    counts = counts,
+    width = min_x and (math.floor(max_x - min_x + 0.5) + 1) or 0,
+    height = min_y and (math.floor(max_y - min_y + 0.5) + 1) or 0
+  }
+end
+
+local function slot_sprite(summary)
+  for index = 1, math.min(#summary.names, MAX_ICONS) do
+    local name = summary.names[index]
+    local sprite = first_valid_sprite({"entity/" .. name, "item/" .. name})
+    if sprite then return sprite end
+  end
+  return first_valid_sprite(GENERIC_SPRITES)
+end
+
+-- Prototype names are internal identifiers; the tooltip shows what the player
+-- reads elsewhere in the game, and falls back to the raw name for a prototype
+-- this save no longer defines.
+local function prototype_caption(name)
+  local prototype = prototypes.entity[name]
+  local localised = prototype and prototype.localised_name or nil
+  if localised ~= nil then return localised end
+  return name
+end
+
+local function contents_caption(summary)
+  local list = {""}
+  for index = 1, math.min(#summary.names, MAX_ICONS) do
+    local name = summary.names[index]
+    list[#list + 1] = {"", "\n", tostring(summary.counts[name]), " x ", prototype_caption(name)}
+  end
+  if #summary.names > MAX_ICONS then
+    list[#list + 1] = {
+      "gui.sceatorio-ai-blueprints-more-kinds",
+      #summary.names - MAX_ICONS
+    }
+  end
+  return list
+end
+
+local function add_slot(container, record)
   local revisions = record.revisions
   local latest = revisions[#revisions]
-  local row = container.add({type = "flow", direction = "horizontal"})
-  local label = row.add({
-    type = "label",
-    caption = {
-      "gui.sceatorio-ai-blueprints-row",
+  local summary = summarize(latest and latest.layout)
+  local cell = add(container, {type = "flow", direction = "vertical"})
+  local button = add(cell, {
+    type = "sprite-button",
+    style = "slot_button",
+    sprite = slot_sprite(summary),
+    number = summary.total > 0 and summary.total or nil,
+    tooltip = {
+      "gui.sceatorio-ai-blueprints-slot",
       text(record.name),
       number(latest and latest.revision),
+      summary.total,
+      summary.width,
+      summary.height,
       number(record.created_tick),
-      number(record.updated_tick)
-    }
-  })
-  row.add({
-    type = "button",
-    caption = {"gui.sceatorio-ai-blueprints-to-cursor"},
+      number(record.updated_tick),
+      contents_caption(summary)
+    },
     tags = {sceatorio_action = ACTION_LOAD, sceatorio_blueprint_id = record.id}
   })
-  style(row, {vertical_align = "center", horizontally_stretchable = true})
-  style(label, {horizontally_stretchable = true, width = 320})
+  local label = add(cell, {type = "label", caption = text(record.name)})
+  style(cell, {horizontal_align = "center", padding = 2})
+  style(button, {width = SLOT_SIZE, height = SLOT_SIZE})
+  style(label, {
+    single_line = true,
+    maximal_width = SLOT_LABEL_WIDTH,
+    horizontal_align = "center"
+  })
 end
 
 local function render_frame(player, page, message)
   destroy_frame(player)
   local records = inbox_records(player.index)
-  local page_count = math.max(1, math.ceil(#records / ROWS_PER_PAGE))
+  local page_count = math.max(1, math.ceil(#records / SLOTS_PER_PAGE))
   page = math.max(1, math.min(page or 1, page_count))
 
+  -- No frame caption: the title lives in the title bar row below, which is the
+  -- only layout that keeps the close button out of the text it used to overlap.
   local frame = player.gui.screen.add({
     type = "frame",
     name = FRAME_NAME,
-    caption = {"gui.sceatorio-ai-blueprints-title"},
     direction = "vertical",
     tags = {sceatorio_page = page}
   })
   frame.auto_center = true
+  style(frame, {width = FRAME_WIDTH})
 
-  local title = frame.add({type = "flow", direction = "horizontal"})
+  local title = add(frame, {type = "flow", direction = "horizontal"})
   title.drag_target = frame
-  local hint = title.add({type = "label", caption = {"gui.sceatorio-ai-blueprints-hint"}})
-  local spacer = title.add({type = "empty-widget"})
-  title.add({
+  add(title, {
+    type = "label",
+    style = "frame_title",
+    caption = {"gui.sceatorio-ai-blueprints-title"}
+  })
+  local spacer = add(title, {type = "empty-widget", style = "draggable_space_header"})
+  spacer.drag_target = frame
+  add(title, {
     type = "sprite-button",
     sprite = "utility/close",
     style = "frame_action_button",
     tags = {sceatorio_action = ACTION_CLOSE}
   })
   style(title, {vertical_align = "center", horizontally_stretchable = true})
-  style(hint, {horizontally_stretchable = true})
-  style(spacer, {horizontally_stretchable = true})
+  style(spacer, {horizontally_stretchable = true, height = 24, right_margin = 4})
 
-  if message then frame.add({type = "label", caption = message}) end
+  local hint = add(frame, {type = "label", caption = {"gui.sceatorio-ai-blueprints-hint"}})
+  style(hint, {single_line = false, maximal_width = FRAME_WIDTH - 32})
 
-  local rows = frame.add({type = "flow", name = "rows", direction = "vertical"})
-  style(rows, {horizontally_stretchable = true})
+  if message then
+    local notice = add(frame, {type = "label", caption = message})
+    style(notice, {single_line = false, maximal_width = FRAME_WIDTH - 32})
+  end
+
   if #records == 0 then
-    rows.add({type = "label", caption = {"gui.sceatorio-ai-blueprints-empty"}})
+    add(frame, {type = "label", caption = {"gui.sceatorio-ai-blueprints-empty"}})
     return frame
   end
 
-  -- Only one page of rows is ever built, so a full 100-record inbox still
-  -- renders a constant number of elements.
-  local first = (page - 1) * ROWS_PER_PAGE + 1
-  local last = math.min(#records, first + ROWS_PER_PAGE - 1)
-  for index = first, last do add_row(rows, records[index]) end
+  local grid = add(frame, {
+    type = "table",
+    name = "slots",
+    column_count = SLOT_COLUMNS
+  })
+  style(grid, {horizontal_spacing = GAP, vertical_spacing = GAP})
 
-  local footer = frame.add({type = "flow", direction = "horizontal"})
+  -- Only one page of slots is ever built, so a full 100-record inbox still
+  -- renders a constant number of elements.
+  local first = (page - 1) * SLOTS_PER_PAGE + 1
+  local last = math.min(#records, first + SLOTS_PER_PAGE - 1)
+  for index = first, last do add_slot(grid, records[index]) end
+
+  local footer = add(frame, {type = "flow", direction = "horizontal"})
   local previous = footer.add({
     type = "button",
     caption = "<",
@@ -240,11 +388,36 @@ local function render_frame(player, page, message)
   return frame
 end
 
+-- aiBlueprints owns the only conversion from a stored layout into a real
+-- blueprint item -- temporary inventory, contents before label and description,
+-- every module, filter and control behavior. The panel must never rebuild that,
+-- so it passes a delivery sink in place of the player: the finished stack lands
+-- in the cursor instead of the clipboard queue. set_stack copies the item, so
+-- the temporary inventory aiBlueprints destroys right after is never aliased.
+local function cursor_sink(player)
+  return {
+    valid = true,
+    connected = player.connected,
+    add_to_clipboard = function(stack)
+      player.cursor_stack.set_stack(stack)
+    end
+  }
+end
+
 local function deliver(player, blueprint_id)
   if type(blueprint_id) ~= "string" then return {"gui.sceatorio-ai-blueprints-missing"} end
+  local cursor = player.cursor_stack
+  if not (cursor and cursor.valid) then
+    return {"gui.sceatorio-ai-blueprints-no-cursor"}
+  end
+  -- Whatever the cursor already holds belongs to the player; set_stack would
+  -- destroy it, so a busy cursor reports and delivers nothing at all.
+  if cursor.valid_for_read then
+    return {"gui.sceatorio-ai-blueprints-cursor-busy"}
+  end
   local result, code, message = Blueprints.load(
     {
-      player = player,
+      player = cursor_sink(player),
       player_index = player.index,
       allow_cursor = true
     },
