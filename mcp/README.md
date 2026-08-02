@@ -101,7 +101,7 @@ A revoked or superseded grant cannot be refreshed in place. Create a new code at
 
 `npm run catalog` prints the machine-readable tool catalog derived from the executable schemas. Do not maintain a parallel handwritten list.
 
-Every catalog entry explicitly declares read-only, destructive, idempotent, and open-world metadata. All 29 tools are closed-world. The dedicated output-port write, the saved-blueprint delete, and the blueprint-book update and delete are destructive/non-idempotent; blueprint save/load, blueprint-book create, and private annotation are non-destructive/non-idempotent.
+Every catalog entry explicitly declares read-only, destructive, idempotent, and open-world metadata. Every tool is closed-world. The dedicated output-port write, the saved-blueprint delete, and the blueprint-book update and delete are destructive/non-idempotent; blueprint save/load, blueprint-book create, and private annotation are non-destructive/non-idempotent.
 
 ## Safety and deployment boundary
 

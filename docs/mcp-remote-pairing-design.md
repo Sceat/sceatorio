@@ -19,7 +19,7 @@ smallest thing that works at that scale, and §6 lists what was deliberately not
 | 2 | Click **Create pairing code** | 15 chars, `XXXXX-XXXX-XXXX`, single use, **5 game-minutes** (`PAIRING_CODE_LIFETIME_TICKS`) |
 | 3 | Open `https://sceatorio-mcp.sceat.xyz/`, paste the code, press Pair | One static page served by the companion. This is the only reason the page exists |
 | 4 | Copy the finished command the page prints and run it | Shown once — the secret is never stored in plaintext or displayed again |
-| 5 | Confirm with `/mcp` in Claude Code | 29 tools appear (`mcp/src/catalog/tools.ts` is the list; do not restate it) |
+| 5 | Confirm with `/mcp` in Claude Code | Every catalog tool appears (`mcp/src/catalog/tools.ts` is the list; do not restate it) |
 
 ```
 claude mcp add --transport http --scope user sceatorio \
@@ -95,7 +95,7 @@ still speaks the same loopback UDP protocol.
 |---|---|---|
 | Code creation + GUI display | Works now | `render_gui` / `ai_create_pairing` shipped |
 | `pairing.exchange` over loopback UDP | Works now | `handle_pairing_exchange` (`aiGateway.lua:903`) is transport-blind; `exchangePairingCode` (`mcp/src/pairing.ts`) already speaks it |
-| All 29 tools over HTTP | Works now | `createSceatorioMcpHandler({resolveGrant})` (`mcp/src/server.ts:63`) already exists and is unused; `createMcpHandler` verifies no tokens — auth is ours, passed through as `authInfo` |
+| All catalog tools over HTTP | Works now | `createSceatorioMcpHandler({resolveGrant})` (`mcp/src/server.ts:63`) already exists and is unused; `createMcpHandler` verifies no tokens — auth is ours, passed through as `authInfo` |
 | Per-request re-authorization, `TOKEN_REVOKED` | Works now | `authorize` in `aiGateway.lua`, checked on every call — this is why a reloaded verifier file cannot resurrect a revoked pairing |
 | GUI revoke, re-pair revokes the old binding, force-change/removal revoke | Works now | `aiGateway.lua:978`, `:1374`, `:1403`, `:1566-1576` |
 | Per-player + save-wide quotas, capability policy, page caps | Works now | `consume_quota` + the `sceatorio-ai-*` runtime settings |

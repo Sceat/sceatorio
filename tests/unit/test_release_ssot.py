@@ -1,5 +1,6 @@
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -210,6 +211,169 @@ class ReleaseSingleSourceOfTruthTests(unittest.TestCase):
         )
         self.assertFalse(entry["deployment"]["enabled"])
         self.assertFalse(entry["verification"]["exact_portal_artifact_tested"])
+
+
+def write_catalog(directory: Path, names: list[str]) -> Path:
+    """Write a stand-in mcp/src/catalog/tools.ts declaring exactly these tools."""
+    entries = "\n".join(
+        "  tool({\n"
+        f'    name: "{name}",\n'
+        f'    operation: "fixture.{name}",\n'
+        "    readOnly: true\n"
+        "  }),"
+        for name in names
+    )
+    source = directory / "tools.ts"
+    source.write_text(
+        f"export const V1_TOOL_DEFINITIONS = [\n{entries}\n] as const;\n", encoding="utf-8"
+    )
+    return source
+
+
+class McpToolCountDerivationTests(unittest.TestCase):
+    """The shipped tool count is derived from the catalog, never asserted as a literal."""
+
+    def test_catalog_parses_without_a_built_dist_or_node_modules(self):
+        validation = release_validate.Validation()
+        names = release_validate.mcp_tool_names(validation)
+
+        self.assertEqual(validation.errors, [])
+        self.assertGreater(len(names), 0)
+        self.assertEqual(len(set(names)), len(names))
+        self.assertIn("get_session", names)
+
+    def test_derived_count_follows_the_catalog_rather_than_a_literal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = write_catalog(Path(directory), ["get_session", "get_alerts", "get_trains"])
+            validation = release_validate.Validation()
+
+            names = release_validate.mcp_tool_names(validation, source=source)
+
+            self.assertEqual(validation.errors, [])
+            self.assertEqual(names, ["get_session", "get_alerts", "get_trains"])
+
+    def test_unreadable_or_unparsable_catalog_fails_loudly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "tools.ts"
+            validation = release_validate.Validation()
+            self.assertEqual(release_validate.mcp_tool_names(validation, source=missing), [])
+            self.assertTrue(validation.errors)
+
+            missing.write_text("export const SOMETHING_ELSE = [];\n", encoding="utf-8")
+            validation = release_validate.Validation()
+            self.assertEqual(release_validate.mcp_tool_names(validation, source=missing), [])
+            self.assertTrue(validation.errors)
+
+    def test_unnamed_catalog_entry_cannot_silently_shrink_the_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = write_catalog(Path(directory), ["get_session", "get_alerts"])
+            source.write_text(
+                source.read_text(encoding="utf-8").replace(
+                    '    name: "get_alerts",\n', "    name:\n      \"get_alerts\",\n"
+                ),
+                encoding="utf-8",
+            )
+            validation = release_validate.Validation()
+
+            release_validate.mcp_tool_names(validation, source=source)
+
+            self.assertTrue(validation.errors)
+
+    def test_stale_prose_count_fails_the_gate(self):
+        # The counts stay interpolated: this file is itself scanned by the check under test.
+        shipped, stale = 3, 4
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "docs").mkdir()
+            (root / "README.md").write_text(
+                f"ships {shipped} scoped MCP tools.\n", encoding="utf-8"
+            )
+            (root / "docs/gate.md").write_text(
+                f"the {stale}-tool gateway is verified\n", encoding="utf-8"
+            )
+            pages = [root / "README.md", root / "docs/gate.md"]
+
+            validation = release_validate.Validation()
+            release_validate.validate_tool_count_claims(validation, shipped, pages)
+
+            self.assertEqual(len(validation.errors), 1)
+            self.assertIn("docs/gate.md:1", validation.errors[0])
+            self.assertIn(f"'{stale}-tool'", validation.errors[0])
+
+            (root / "docs/gate.md").write_text(
+                f"the {shipped}-tool gateway is verified\n", encoding="utf-8"
+            )
+            validation = release_validate.Validation()
+            release_validate.validate_tool_count_claims(validation, shipped, pages)
+            self.assertEqual(validation.errors, [])
+
+    def test_scanner_reports_when_it_covers_nothing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            page = Path(directory) / "README.md"
+            page.write_text("no counts here\n", encoding="utf-8")
+            validation = release_validate.Validation()
+
+            release_validate.validate_tool_count_claims(validation, 3, [page])
+
+            self.assertTrue(validation.errors)
+
+    def test_scan_covers_versioned_prose_but_not_untracked_scratch(self):
+        validation = release_validate.Validation()
+        tracked = release_validate.tracked_text_files(validation)
+
+        self.assertEqual(validation.errors, [])
+        self.assertIn(REPO_ROOT / "README.md", tracked)
+        self.assertIn(REPO_ROOT / "portal/faq.md", tracked)
+        self.assertIn(REPO_ROOT / "mcp/README.md", tracked)
+        self.assertNotIn(REPO_ROOT / "changelog.txt", tracked)
+        self.assertFalse([path for path in tracked if "node_modules" in path.parts])
+
+    def test_claim_pattern_reads_prose_without_chasing_incidental_digits(self):
+        count = 7
+        self.assertEqual(
+            release_validate.TOOL_COUNT_CLAIM.findall(
+                f"exposes {count} low-level, scope-checked MCP tools for telemetry"
+            ),
+            [str(count)],
+        )
+        for text in ("the v1 tool catalog", "7z2patool binary", "at most 32 signals"):
+            self.assertEqual(release_validate.TOOL_COUNT_CLAIM.findall(text), [])
+
+    def test_every_prose_site_that_states_a_count_is_covered(self):
+        validation = release_validate.Validation()
+        paths = release_validate.tracked_text_files(validation)
+
+        # No catalog can declare this many tools, so every covered claim must report.
+        release_validate.validate_tool_count_claims(validation, 10**6, paths)
+
+        reported = {error.split(" in ")[1].split(":")[0] for error in validation.errors}
+        self.assertEqual(
+            reported,
+            {
+                "README.md",
+                "docs/features.md",
+                "mcp/README.md",
+                "portal/description.md",
+                "portal/faq.md",
+                "portal/feature-contract.json",
+            },
+        )
+
+    def test_shipped_prose_matches_the_shipped_catalog(self):
+        validation = release_validate.Validation()
+        expected = len(release_validate.mcp_tool_names(validation))
+
+        release_validate.validate_tool_count_claims(
+            validation, expected, release_validate.tracked_text_files(validation)
+        )
+
+        self.assertEqual(validation.errors, [])
+        combined = "\n".join(
+            (REPO_ROOT / name).read_text(encoding="utf-8")
+            for name in ("portal/description.md", "portal/faq.md")
+        )
+        self.assertIn(f"{expected} scoped MCP tools", combined)
+
 
 if __name__ == "__main__":
     unittest.main()

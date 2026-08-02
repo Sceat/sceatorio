@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 import struct
+import subprocess
 import sys
 import zipfile
 import zlib
@@ -31,6 +32,14 @@ VALID_TAGS = {
     "mining", "planets", "power", "storage", "trains", "transportation",
 }
 
+MCP_TOOL_CATALOG = REPO_ROOT / "mcp/src/catalog/tools.ts"
+MCP_CATALOG_ARRAY = re.compile(r"export const V1_TOOL_DEFINITIONS\s*=\s*\[(.*?)\n\] as const;", re.S)
+MCP_CATALOG_ENTRY = re.compile(r'^\s*name: "([a-z0-9_]+)",$', re.M)
+TOOL_COUNT_CLAIM = re.compile(r"\b([0-9]+)(?:[ -][A-Za-z][A-Za-z-]*,?){0,4}[ -]tools?\b")
+TOOL_COUNT_SUFFIXES = {".cfg", ".json", ".lua", ".md", ".mjs", ".py", ".ts", ".txt", ".yaml", ".yml"}
+# changelog.txt records the counts that past releases actually shipped; that history stays frozen.
+TOOL_COUNT_SKIP_FILES = {REPO_ROOT / "changelog.txt"}
+
 
 class Validation:
     def __init__(self) -> None:
@@ -49,6 +58,79 @@ def load_json(path: Path, validation: Validation) -> dict:
     except (OSError, json.JSONDecodeError) as error:
         validation.errors.append(f"cannot read {path.relative_to(REPO_ROOT)}: {error}")
         return {}
+
+
+def mcp_tool_names(validation: Validation, source: Path = MCP_TOOL_CATALOG) -> list[str]:
+    """Read the shipped tool names straight out of the MCP catalog source.
+
+    The TypeScript is parsed rather than executed because validate.py runs in a clean CI
+    checkout: there is no `npm install` and no compiled `mcp/dist`, so the catalog printer
+    (`mcp/src/catalog/print-catalog.ts`) cannot be invoked there.
+    """
+    try:
+        text = source.read_text(encoding="utf-8")
+    except OSError as error:
+        validation.errors.append(f"cannot read the MCP tool catalog: {error}")
+        return []
+    block = MCP_CATALOG_ARRAY.search(text)
+    if block is None:
+        validation.errors.append("MCP tool catalog no longer exposes a parsable V1_TOOL_DEFINITIONS array")
+        return []
+    body = block.group(1)
+    names = MCP_CATALOG_ENTRY.findall(body)
+    validation.require(bool(names), "MCP tool catalog parsed to zero tools")
+    validation.require(
+        len(names) == body.count("tool({"),
+        "MCP tool catalog holds entries whose name this parser cannot see, so any derived count is wrong",
+    )
+    validation.require(len(set(names)) == len(names), "MCP tool catalog declares a duplicate tool name")
+    return names
+
+
+def tracked_text_files(validation: Validation, root: Path = REPO_ROOT) -> list[Path]:
+    """Versioned text files, so untracked scratch and build output cannot fail a release gate."""
+    try:
+        listing = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            capture_output=True,
+            check=True,
+            text=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as error:
+        validation.errors.append(f"cannot list tracked files: {error}")
+        return []
+    files: list[Path] = []
+    for name in listing.split("\0"):
+        if not name:
+            continue
+        path = root / name
+        if path.suffix not in TOOL_COUNT_SUFFIXES or path in TOOL_COUNT_SKIP_FILES:
+            continue
+        if path.is_file():
+            files.append(path)
+    return files
+
+
+def validate_tool_count_claims(validation: Validation, expected: int, paths: list[Path]) -> None:
+    """Every prose claim about the shipped tool count must match the catalog."""
+    seen = 0
+    for path in paths:
+        label = str(path.relative_to(REPO_ROOT)) if path.is_relative_to(REPO_ROOT) else str(path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            validation.errors.append(f"cannot scan {label} for tool-count claims: {error}")
+            continue
+        for number, line in enumerate(text.splitlines(), start=1):
+            for claim in TOOL_COUNT_CLAIM.finditer(line):
+                seen += 1
+                validation.require(
+                    int(claim.group(1)) == expected,
+                    f"stale MCP tool count in {label}:{number}: {claim.group(0)!r} contradicts"
+                    f" the catalog in {MCP_TOOL_CATALOG.relative_to(REPO_ROOT)}, which declares"
+                    f" {expected} (spell a partial count as a word if it is deliberately not the total)",
+                )
+    validation.require(seen > 0, "no MCP tool-count claim was found, so this check now covers nothing")
 
 
 def sha256(path: Path) -> str:
@@ -329,7 +411,7 @@ def validate_headless_ci(validation: Validation) -> str:
     return version
 
 
-def validate_portal(validation: Validation, info: dict) -> None:
+def validate_portal(validation: Validation, info: dict, tool_count: int) -> None:
     metadata = load_json(REPO_ROOT / "portal/metadata.json", validation)
     files = metadata.get("files", {})
     if not isinstance(files, dict):
@@ -393,7 +475,10 @@ def validate_portal(validation: Validation, info: dict) -> None:
         in combined,
         "unannounced third-party electricity limitation must be prominent",
     )
-    validation.require("29 scoped MCP tools" in combined, "portal copy must describe the shipped 29-tool AI boundary")
+    validation.require(
+        f"{tool_count} scoped MCP tools" in combined,
+        "portal copy must state the MCP tool count declared by mcp/src/catalog/tools.ts",
+    )
     validation.require("bearer credentials never enter Factorio UDP or the save" in combined, "portal copy must state the AI credential boundary")
     validation.require(
         "not affiliated with or endorsed by Anthropic" in description,
@@ -617,7 +702,9 @@ def main() -> int:
     validation.require((REPO_ROOT / "LICENSE").read_text(encoding="utf-8").startswith("MIT License\n"), "LICENSE must contain the MIT text")
     factorio_target = validate_headless_ci(validation)
     info = validate_info(validation, arguments.tag, factorio_target)
-    validate_portal(validation, info)
+    tool_count = len(mcp_tool_names(validation))
+    validate_portal(validation, info, tool_count)
+    validate_tool_count_claims(validation, tool_count, tracked_text_files(validation))
     validate_assets(validation)
     validate_workflows(validation)
     validate_third_party_audit(validation, factorio_target)

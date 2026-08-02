@@ -3,6 +3,7 @@ import {spawn} from "node:child_process";
 import net from "node:net";
 import readline from "node:readline";
 
+import {V1_TOOL_NAMES} from "../../mcp/dist/src/catalog/tools.js";
 import {
   PairingExchangeError,
   descriptorToAccessGrant,
@@ -191,7 +192,11 @@ async function checkStdioMcp(grant) {
       params: {}
     })}\n`);
     const listed = await rpc("tools/list", {});
-    assert.equal(listed.result?.tools?.length, 29, JSON.stringify(listed));
+    assert.deepEqual(
+      (listed.result?.tools ?? []).map((tool) => tool.name).sort(),
+      [...V1_TOOL_NAMES].sort(),
+      JSON.stringify(listed)
+    );
     const session = await rpc("tools/call", {name: "get_session", arguments: {}});
     assert.notEqual(session.result?.isError, true, JSON.stringify(session));
   } finally {
@@ -467,7 +472,7 @@ try {
     {},
     "TOKEN_REVOKED"
   );
-  console.log("SCEATORIO_AI_E2E_PASS: pairing, 29-tool gateway, stdio MCP, scope, replay, policy disable, expiry, and revoke verified");
+  console.log(`SCEATORIO_AI_E2E_PASS: pairing, ${V1_TOOL_NAMES.length}-tool gateway, stdio MCP, scope, replay, policy disable, expiry, and revoke verified`);
 } finally {
   if (replayTransport) await replayTransport.close();
   else if (transport) await transport.close();
