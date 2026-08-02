@@ -24,7 +24,8 @@ export const AccessGrantSchema = z.object({
   surfaces: z.array(SurfaceGrantSchema).min(1),
   preferences: PlayerPreferencesSchema,
   issuedAtMs: z.number().int().nonnegative(),
-  expiresAtMs: z.number().int().positive(),
+  /** Absent means the grant never expires; only revocation ends a pairing. */
+  expiresAtMs: z.number().int().positive().optional(),
   revokedAtMs: z.number().int().nonnegative().optional()
 });
 export type AccessGrantData = z.infer<typeof AccessGrantSchema>;
@@ -90,7 +91,7 @@ export function authorizeAccess(
   if (grant.revokedAtMs !== undefined) {
     throw new AuthorizationError("TOKEN_REVOKED", "This pairing has been revoked");
   }
-  if (grant.expiresAtMs <= nowMs) {
+  if (grant.expiresAtMs !== undefined && grant.expiresAtMs <= nowMs) {
     throw new AuthorizationError("TOKEN_EXPIRED", "This access grant has expired");
   }
   if (!policy.allowedCapabilities.includes(capability) || !grant.capabilities.has(capability)) {

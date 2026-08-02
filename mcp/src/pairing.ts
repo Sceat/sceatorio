@@ -97,7 +97,11 @@ export function descriptorToAccessGrant(
   options: {nowMs?: number; principalId?: string; tokenId?: string} = {}
 ): AccessGrantData {
   const nowMs = options.nowMs ?? Date.now();
-  const lifetimeMs = Math.max(1, descriptor.expiresTick - descriptor.issuedTick) * (1_000 / 60);
+  // No `expiresTick` on the wire means the binding never expires, so the grant
+  // carries no `expiresAtMs` either. Older mods that still send one keep it.
+  const expiresAtMs = descriptor.expiresTick === undefined
+    ? undefined
+    : Math.ceil(nowMs + Math.max(1, descriptor.expiresTick - descriptor.issuedTick) * (1_000 / 60));
   return {
     bindingId: descriptor.bindingId,
     principalId: options.principalId ?? `local-mcp:${randomUUID()}`,
@@ -110,6 +114,6 @@ export function descriptorToAccessGrant(
     surfaces: descriptor.surfaces,
     preferences: descriptor.preferences,
     issuedAtMs: nowMs,
-    expiresAtMs: Math.ceil(nowMs + lifetimeMs)
+    ...(expiresAtMs === undefined ? {} : {expiresAtMs})
   };
 }

@@ -139,6 +139,22 @@ test("save, force and capability scopes are all enforced", () => {
   );
 });
 
+test("a grant without an expiry never expires, but revocation and legacy expiry still bite", () => {
+  const target = { saveId: "save-1", forceId: "force-1" };
+  const decade = NOW + 10 * 365 * 24 * 60 * 60 * 1_000;
+  assert.doesNotThrow(() =>
+    authorizeAccess(grant({ expiresAtMs: undefined }), policy(), "session:read", target, decade)
+  );
+  expectAuthorizationCode(
+    () => authorizeAccess(grant(), policy(), "session:read", target, 2_000),
+    "TOKEN_EXPIRED"
+  );
+  expectAuthorizationCode(
+    () => authorizeAccess(grant({ revokedAtMs: NOW }), policy(), "session:read", target, NOW),
+    "TOKEN_REVOKED"
+  );
+});
+
 test("team-owned secondary planet surfaces are allowed but foreign surfaces are denied", () => {
   const access = grant();
   assert.doesNotThrow(() =>

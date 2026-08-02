@@ -77,9 +77,10 @@ export const PairingDescriptorSchema = z.object({
   surfaces: z.array(PairingSurfaceGrantSchema).min(1),
   preferences: PlayerPreferencesSchema,
   issuedTick: z.number().int().nonnegative(),
-  expiresTick: z.number().int().positive()
+  /** Absent means the binding never expires — the only thing that ends it is revocation. */
+  expiresTick: z.number().int().positive().optional()
 }).superRefine((descriptor, context) => {
-  if (descriptor.expiresTick <= descriptor.issuedTick) {
+  if (descriptor.expiresTick !== undefined && descriptor.expiresTick <= descriptor.issuedTick) {
     context.addIssue({
       code: "custom",
       path: ["expiresTick"],

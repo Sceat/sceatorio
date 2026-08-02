@@ -65,12 +65,56 @@ class AiGatewayStaticTests(unittest.TestCase):
         self.assertIn("allow_cursor = not binding.dev_virtual,", gateway)
         self.assertNotIn("binding.allow_cursor", gateway)
 
-    def test_binding_lifetime_and_page_size_are_fixed_constants(self):
+    def test_page_size_is_a_fixed_constant(self):
         gateway = (ROOT / "src/game/aiGateway.lua").read_text(encoding="utf-8")
-        self.assertIn("local BINDING_LIFETIME_HOURS = 24", gateway)
         self.assertIn("local MAX_PAGE_SIZE = 100", gateway)
-        self.assertIn("BINDING_LIFETIME_HOURS * 60 * 60 * 60", gateway)
         self.assertIn("max_page_size = MAX_PAGE_SIZE", gateway)
+
+    def test_bindings_never_expire_and_revocation_is_the_only_end(self):
+        gateway = (ROOT / "src/game/aiGateway.lua").read_text(encoding="utf-8")
+        operations = (ROOT / "src/game/aiOperations.lua").read_text(encoding="utf-8")
+        # A pairing is permanent: no lifetime constant, no stamped expiry, and
+        # nothing in the gateway can answer TOKEN_EXPIRED any more.
+        self.assertNotIn("BINDING_LIFETIME_HOURS", gateway)
+        self.assertNotIn("TOKEN_EXPIRED", gateway)
+        self.assertNotIn("binding.expires_tick", gateway)
+        self.assertNotIn("binding.expires_tick", operations)
+        # The descriptor is the wire contract: no expiry field means no expiry.
+        descriptor = gateway[
+            gateway.index("local function descriptor(binding)") :
+            gateway.index("local function uplink_powered")
+        ]
+        self.assertIn("issuedTick = binding.issued_tick", descriptor)
+        self.assertNotIn("expiresTick", descriptor)
+
+        # Every place that used to gate on expiry now gates on revocation alone.
+        authorize = gateway[
+            gateway.index("local function authorize(request)") :
+            gateway.index("local function attach_quota")
+        ]
+        self.assertIn(
+            'if binding.revoked_tick then return nil, "TOKEN_REVOKED"', authorize
+        )
+        wait_check = gateway[
+            gateway.index("local function wait_context_valid") :
+            gateway.index("local function process_event_waits")
+        ]
+        self.assertIn("if binding.revoked_tick then return false end", wait_check)
+        compact = gateway[
+            gateway.index("local function compact_bindings") :
+            gateway.index("local function process_ingress")
+        ]
+        self.assertIn("local active = not binding.revoked_tick", compact)
+        self.assertIn("game.tick - binding.revoked_tick <= BINDING_RETENTION_TICKS", compact)
+        active = gateway[
+            gateway.index("local function active_bindings") :
+            gateway.index("local function destroy_gui")
+        ]
+        self.assertIn("if not binding.revoked_tick", active)
+
+        # Pairing codes are the one thing that still expires: they are one-shot.
+        self.assertIn("local PAIRING_CODE_LIFETIME_TICKS = 5 * 60 * 60", gateway)
+        self.assertIn("if pending.expires_tick <= game.tick then", gateway)
 
     def test_entity_resolution_and_annotations_require_a_scoped_surface(self):
         telemetry = (ROOT / "src/game/aiTelemetry.lua").read_text(encoding="utf-8")

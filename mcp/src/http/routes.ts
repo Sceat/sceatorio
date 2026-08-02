@@ -6,7 +6,7 @@ import { materializeAccessGrant, type AccessGrant } from "../auth/authorize.js";
 import { descriptorToAccessGrant } from "../pairing.js";
 import type { McpLogger } from "../server.js";
 import type { PairingDescriptor } from "../transport/protocol.js";
-import { InMemoryCredentialStore, parseBearer } from "./credentials.js";
+import { CredentialStore, parseBearer } from "./credentials.js";
 import type { HttpClient, WebHandler } from "./node-bridge.js";
 import { isPairingCode, PairGuard } from "./pair-guard.js";
 import { renderPairingPage } from "./pairing-page.js";
@@ -31,7 +31,7 @@ export interface HttpLogger extends McpLogger {
 export interface RouterDependencies {
   /** Absolute base URL players reach this service on, e.g. `https://mcp.example.org`. */
   publicUrl: string;
-  credentials: InMemoryCredentialStore;
+  credentials: CredentialStore;
   guard: PairGuard;
   /** Performs the loopback UDP `pairing.exchange`; injected so tests need no socket. */
   exchange(code: string): Promise<PairingDescriptor>;
@@ -185,7 +185,8 @@ async function pair(
     token: credential.token,
     command: `claude mcp add --transport http --scope user sceatorio ${publicUrl}/mcp `
       + `--header "Authorization: Bearer ${credential.token}"`,
-    expiresAtMs: credential.expiresAtMs
+    // Omitted when the pairing never expires, which the page reads as "permanent".
+    ...(credential.expiresAtMs === undefined ? {} : { expiresAtMs: credential.expiresAtMs })
   });
 }
 
@@ -195,7 +196,9 @@ function toAuthInfo(grant: AccessGrant): AuthInfo {
     token: grant.tokenId,
     clientId: grant.principalId,
     scopes: [...grant.capabilities],
-    expiresAt: Math.floor(grant.expiresAtMs / 1000),
+    ...(grant.expiresAtMs === undefined
+      ? {}
+      : { expiresAt: Math.floor(grant.expiresAtMs / 1000) }),
     extra: { [AUTH_INFO_GRANT]: grant }
   };
 }

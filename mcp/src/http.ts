@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { loadHttpConfiguration } from "./http/config.js";
-import { InMemoryCredentialStore } from "./http/credentials.js";
+import { CredentialStore } from "./http/credentials.js";
 import { createNodeServer } from "./http/node-bridge.js";
 import { PairGuard } from "./http/pair-guard.js";
 import { createRouter, grantFromContext, type HttpLogger } from "./http/routes.js";
@@ -32,7 +32,12 @@ async function main(): Promise<void> {
   const factorio = new CorrelatedFactorioTransport(peer, {
     defaultTimeoutMs: configuration.policy.maxRequestTimeoutMs
   });
-  const credentials = new InMemoryCredentialStore();
+  const credentials = new CredentialStore({
+    ...(configuration.credentialStorePath === undefined
+      ? {}
+      : { path: configuration.credentialStorePath }),
+    logger
+  });
   const mcp = createSceatorioMcpHandler({
     factorio,
     policy: configuration.policy,
@@ -78,6 +83,11 @@ async function main(): Promise<void> {
     `Sceatorio MCP server is listening on http://${configuration.bindAddress}:${configuration.port}`,
     { publicUrl: configuration.publicUrl }
   );
+  if (configuration.credentialStorePath === undefined) {
+    console.error(
+      "WARNING: SCEATORIO_CREDENTIAL_STORE is unset — pairings are lost on every restart"
+    );
+  }
 }
 
 main().catch((error: unknown) => {

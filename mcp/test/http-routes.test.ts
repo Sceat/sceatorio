@@ -4,7 +4,7 @@ import test from "node:test";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 
 import type { AccessGrant } from "../src/auth/authorize.js";
-import { InMemoryCredentialStore } from "../src/http/credentials.js";
+import { CredentialStore } from "../src/http/credentials.js";
 import { PairGuard } from "../src/http/pair-guard.js";
 import { createRouter, grantFromContext } from "../src/http/routes.js";
 import { PairingExchangeError } from "../src/pairing.js";
@@ -17,7 +17,7 @@ const PUBLIC_URL = "https://mcp.example.test";
 const CODE = "ABCDE-FGHJ-KMNP";
 const NOW = 1_000_000;
 
-function descriptor(): PairingDescriptor {
+function descriptor(overrides: Partial<PairingDescriptor> = {}): PairingDescriptor {
   return {
     protocol: FACTORIO_GATEWAY_PROTOCOL,
     bindingId: "binding:00000000-0000-4000-8000-000000000004",
@@ -36,7 +36,7 @@ function descriptor(): PairingDescriptor {
       blueprintDelivery: "inbox-only"
     },
     issuedTick: 0,
-    expiresTick: 60 * 60
+    ...overrides
   };
 }
 
@@ -46,7 +46,7 @@ function harness(exchange?: (code: string) => Promise<PairingDescriptor>) {
   let clock = NOW;
   const router = createRouter({
     publicUrl: PUBLIC_URL,
-    credentials: new InMemoryCredentialStore(),
+    credentials: new CredentialStore(),
     guard: new PairGuard(),
     exchange: async (code) => {
       forwarded.push(code);
@@ -111,7 +111,7 @@ test("the pairing page is self-contained and carries the public endpoint", async
 test("pairing mints a bearer that authorizes MCP calls, and nothing else does", async () => {
   const app = harness();
   const paired = await app.pair(CODE);
-  const body = await paired.json() as { token: string; command: string; expiresAtMs: number };
+  const body = await paired.json() as { token: string; command: string; expiresAtMs?: number };
 
   assert.equal(paired.status, 200);
   assert.deepEqual(app.forwarded, [CODE]);
@@ -121,7 +121,7 @@ test("pairing mints a bearer that authorizes MCP calls, and nothing else does", 
     "claude mcp add --transport http --scope user sceatorio https://mcp.example.test/mcp "
       + `--header "Authorization: Bearer ${body.token}"`
   );
-  assert.equal(body.expiresAtMs, NOW + 60_000);
+  assert.equal(body.expiresAtMs, undefined, "a pairing never expires, so no expiry is advertised");
 
   const authorized = await app.call(`Bearer ${body.token}`);
   assert.equal(authorized.status, 200);
@@ -136,10 +136,19 @@ test("pairing mints a bearer that authorizes MCP calls, and nothing else does", 
   assert.equal(app.served.length, 1, "no unauthorized request ever reached the MCP server");
 });
 
-test("an expired binding stops authorizing", async () => {
+test("a bearer keeps authorizing however much time passes", async () => {
   const app = harness();
   const body = await (await app.pair(CODE)).json() as { token: string };
 
+  app.advance(365 * 24 * 60 * 60 * 1000);
+  assert.equal((await app.call(`Bearer ${body.token}`)).status, 200);
+});
+
+test("a legacy binding that still carries an expiry stops authorizing", async () => {
+  const app = harness(async () => descriptor({ expiresTick: 60 * 60 }));
+  const body = await (await app.pair(CODE)).json() as { token: string; expiresAtMs?: number };
+
+  assert.equal(body.expiresAtMs, NOW + 60_000);
   app.advance(59_999);
   assert.equal((await app.call(`Bearer ${body.token}`)).status, 200);
   app.advance(1);

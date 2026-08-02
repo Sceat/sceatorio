@@ -100,8 +100,12 @@ pre {
         return;
       }
       command.textContent = outcome.body.command;
-      var minutes = Math.max(0, Math.round((outcome.body.expiresAtMs - Date.now()) / 60000));
-      expiry.textContent = 'This binding expires in about ' + minutes + ' minutes of server time.';
+      if (typeof outcome.body.expiresAtMs === 'number') {
+        var minutes = Math.max(0, Math.round((outcome.body.expiresAtMs - Date.now()) / 60000));
+        expiry.textContent = 'This binding expires in about ' + minutes + ' minutes of server time.';
+      } else {
+        expiry.textContent = 'This binding never expires. Revoke it at the Uplink when you are done.';
+      }
       result.hidden = false;
       input.value = '';
     }).catch(function () {

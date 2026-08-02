@@ -28,7 +28,6 @@ local MAX_INGRESS_PACKETS = 64
 local MAX_INGRESS_PACKETS_PER_TICK = 4
 local MAX_PAIRING_FAILURES_PER_MINUTE = 10
 local PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-local BINDING_LIFETIME_HOURS = 24
 local MAX_PAGE_SIZE = 100
 
 local SUPPORTED_CAPABILITIES = AiConstants.CAPABILITY_SET
@@ -227,8 +226,7 @@ local function descriptor(binding)
       notifications = "important",
       blueprintDelivery = "allow-cursor"
     },
-    issuedTick = binding.issued_tick,
-    expiresTick = binding.expires_tick
+    issuedTick = binding.issued_tick
   }
 end
 
@@ -259,6 +257,9 @@ local function revoke_player_bindings(player_index, reason)
   end
 end
 
+-- A binding never expires: revocation is the only way one ends (GUI Revoke,
+-- re-pairing, force change, leaving, or the server kill switch). Saves written
+-- before 2.1.x still carry an `expires_tick`; it is dead data, never read.
 local function create_binding_record(options)
   local ai = root()
   local seed = game.default_map_gen_settings.seed or 0
@@ -278,7 +279,6 @@ local function create_binding_record(options)
     uplink_unit_number = options.uplink.unit_number,
     uplink_entity = options.uplink,
     issued_tick = game.tick,
-    expires_tick = game.tick + math.floor(BINDING_LIFETIME_HOURS * 60 * 60 * 60),
     dev_virtual = options.dev_virtual or false
   }
   ai.bindings[binding.id] = binding
@@ -520,7 +520,6 @@ local function authorize(request)
   local binding = root().bindings[request.scope.bindingId]
   if not binding then return nil, "BINDING_NOT_FOUND", "Pairing does not exist in this save" end
   if binding.revoked_tick then return nil, "TOKEN_REVOKED", "Pairing has been revoked" end
-  if binding.expires_tick <= game.tick then return nil, "TOKEN_EXPIRED", "Pairing has expired" end
   if request.scope.saveId ~= ensure_save_id() or request.scope.saveId ~= binding.save_id then
     return nil, "SAVE_SCOPE_MISMATCH", "Request targets another save"
   end
@@ -1134,7 +1133,7 @@ end
 local function wait_context_valid(context)
   local binding = context.binding
   if not global_value("sceatorio-ai-enabled", false) then return false end
-  if binding.revoked_tick or binding.expires_tick <= game.tick then return false end
+  if binding.revoked_tick then return false end
   local force = force_for_binding(binding)
   if not force or not force_technology(force, AiConstants.TECHNOLOGY) then return false end
   local current_capabilities = effective_capabilities(force)
@@ -1258,13 +1257,12 @@ local function compact_bindings()
     table.sort(records, function(first, second) return first.issued_tick > second.issued_tick end)
     local retained, inactive_count = {}, 0
     for _, binding in ipairs(records) do
-      local active = not binding.revoked_tick and binding.expires_tick > game.tick
-      local inactive_since = binding.revoked_tick or binding.expires_tick
+      local active = not binding.revoked_tick
       local keep = active or binding_has_pending_wait(binding)
       if not active then
         inactive_count = inactive_count + 1
         if inactive_count <= MAX_RETAINED_BINDINGS_PER_PLAYER
-          and game.tick - inactive_since <= BINDING_RETENTION_TICKS then keep = true end
+          and game.tick - binding.revoked_tick <= BINDING_RETENTION_TICKS then keep = true end
       end
       if keep then
         retained[#retained + 1] = binding.id
@@ -1443,7 +1441,7 @@ end
 local function active_bindings(player, include_force)
   local values = {}
   for _, binding in pairs(root().bindings) do
-    if not binding.revoked_tick and binding.expires_tick > game.tick
+    if not binding.revoked_tick
       and (binding.player_index == player.index
         or (include_force and binding.force_index == player.force.index)) then
       values[#values + 1] = binding
@@ -1500,7 +1498,7 @@ local function render_gui(player, uplink, message)
   local bindings = active_bindings(player, player.admin)
   for _, binding in ipairs(bindings) do
     local row = frame.add({type = "flow", direction = "horizontal"})
-    row.add({type = "label", caption = binding.id .. "  (tick " .. binding.expires_tick .. ")"})
+    row.add({type = "label", caption = binding.id .. "  (paired at tick " .. binding.issued_tick .. ")"})
     row.add({
       type = "button",
       caption = {"gui.sceatorio-ai-revoke"},

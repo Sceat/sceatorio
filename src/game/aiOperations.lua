@@ -99,7 +99,6 @@ local function session(context)
         and ("surface:" .. context.uplink.surface.index) or nil,
       powered = true
     },
-    expiresTick = context.binding.expires_tick,
     budgets = {
       maxPageSize = context.max_page_size,
       requestsPerMinute = context.requests_per_minute,

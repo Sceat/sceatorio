@@ -14,7 +14,7 @@ import {
 
 const REQUEST_ID = "00000000-0000-4000-8000-000000000003";
 
-function descriptor(): PairingDescriptor {
+function descriptor(overrides: Partial<PairingDescriptor> = {}): PairingDescriptor {
   return {
     protocol: FACTORIO_GATEWAY_PROTOCOL,
     bindingId: "binding:00000000-0000-4000-8000-000000000004",
@@ -36,7 +36,7 @@ function descriptor(): PairingDescriptor {
       blueprintDelivery: "inbox-only" as const
     },
     issuedTick: 1_000,
-    expiresTick: 87_400
+    ...overrides
   };
 }
 
@@ -96,5 +96,9 @@ test("pairing descriptors become external wall-clock access grants", () => {
   });
   assert.equal(grant.forceId, "force:3");
   assert.equal(grant.principalId, "local:test");
-  assert.equal(grant.expiresAtMs, 1_450_000);
+  assert.equal(grant.expiresAtMs, undefined, "a binding without a wire expiry never expires");
+
+  // A descriptor from a mod older than 2.1.x still carries its 24-hour lifetime.
+  const legacy = descriptorToAccessGrant(descriptor({ expiresTick: 87_400 }), { nowMs: 10_000 });
+  assert.equal(legacy.expiresAtMs, 1_450_000);
 });
