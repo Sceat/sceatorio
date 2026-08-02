@@ -130,6 +130,131 @@ class AiGatewayStaticTests(unittest.TestCase):
         annotation = control[control.index("function AiControl.add_annotation") :]
         self.assertIn('"SURFACE_REQUIRED"', annotation)
 
+    def test_entity_prototypes_expose_layout_geometry_under_safe_value(self):
+        # A blueprint author must be able to place pipes, inserters and modules
+        # from this endpoint alone; falling back to the base-game data files is
+        # the failure this covers.
+        telemetry = (ROOT / "src/game/aiTelemetry.lua").read_text(encoding="utf-8")
+        entity_branch = telemetry[
+            telemetry.index('if payload.type == "entity" then') :
+            telemetry.index('elseif payload.type == "item" then')
+        ]
+        # Existing fields keep their exact names: this endpoint is additive.
+        for kept in (
+            "result.entityType = prototype.type",
+            "result.tileWidth = prototype.tile_width",
+            "result.tileHeight = prototype.tile_height",
+            "result.beltSpeedTilesPerTick",
+            "result.maxUndergroundDistance",
+            "result.craftingSpeed",
+            "result.energyUsageW",
+            "result.energyProductionW",
+            "result.fluidCapacity",
+            "result.placeItems = plain_place_items(prototype)",
+        ):
+            self.assertIn(kept, entity_branch)
+        # Every new prototype read is pcall-guarded, because prototype members
+        # differ by entity type and a missing member raises.
+        for guarded in (
+            "result.fluidBoxes, result.fluidBoxesTruncated = safe_value(",
+            "result.inserter = safe_value(",
+            "result.moduleInventorySize = safe_value(",
+            "result.allowedModuleCategories, result.allowedModuleCategoriesTruncated = safe_value(",
+            "result.allowedEffects, result.allowedEffectsTruncated = safe_value(",
+            "result.craftingCategories, result.craftingCategoriesTruncated = safe_value(",
+        ):
+            self.assertIn(guarded, entity_branch)
+
+        boxes = telemetry[
+            telemetry.index("local function pipe_connection(connection)") :
+            telemetry.index("local function inserter_geometry(prototype)")
+        ]
+        # Pipe connections carry everything needed to compute the tile a pipe
+        # goes on for a chosen entity direction.
+        for field in (
+            "connectionType = connection.connection_type",
+            "flowDirection = connection.flow_direction",
+            "direction = connection.direction",
+            "maxUndergroundDistance = connection.max_underground_distance",
+            "altDirection = connection.alt_direction",
+            "altPosition = copy_vector(connection.alt_position)",
+            "productionType = box.production_type",
+        ):
+            self.assertIn(field, boxes)
+        # Bounds exist on boxes, on connections per box, and on the total.
+        self.assertIn("if index > MAX_FLUID_BOXES then", boxes)
+        self.assertIn("if connection_index > MAX_PIPE_CONNECTIONS or connection_budget <= 0 then", boxes)
+        self.assertIn("if index > MAX_CONNECTION_CATEGORIES then", boxes)
+        self.assertIn("if index > #FLUID_BOX_POSITION_ORDER then break end", boxes)
+        for bound in (
+            "local MAX_FLUID_BOXES = 16",
+            "local MAX_PIPE_CONNECTIONS = 8",
+            "local MAX_PIPE_CONNECTIONS_TOTAL = 32",
+            "local MAX_CONNECTION_CATEGORIES = 4",
+            "local MAX_PROTOTYPE_CATEGORIES = 32",
+            "local MAX_MODULE_EFFECTS = 16",
+        ):
+            self.assertIn(bound, telemetry)
+        # The cardinal ordering is published so positions are interpretable.
+        self.assertIn(
+            'local FLUID_BOX_POSITION_ORDER = {"north", "east", "south", "west"}',
+            telemetry,
+        )
+        # The constant is copied, never handed out by reference.
+        self.assertIn("result.fluidBoxPositionOrder = {}", entity_branch)
+        self.assertIn("for _, cardinal in ipairs(FLUID_BOX_POSITION_ORDER) do", entity_branch)
+        # A malformed cardinal point drops the list rather than shifting the
+        # remaining points onto the wrong tiles.
+        self.assertIn("positions = {}", boxes)
+
+        inserter = telemetry[
+            telemetry.index("local function inserter_geometry(prototype)") :
+            telemetry.index("local function bounded_categories(dictionary, maximum)")
+        ]
+        for field in (
+            "prototype.inserter_pickup_position",
+            "prototype.inserter_drop_position",
+            "prototype.inserter_chases_belt_items",
+            "prototype.filter_count",
+            "get_inserter_rotation_speed",
+            "get_inserter_extension_speed",
+        ):
+            self.assertIn(field, inserter)
+
+        # Set-valued prototype members are sorted, not iterated with pairs, so
+        # the response ordering is deterministic across saves.
+        categories = telemetry[
+            telemetry.index("local function bounded_categories(dictionary, maximum)") :
+            telemetry.index("function Telemetry.prototype(context, payload)")
+        ]
+        self.assertIn("local keys = sorted_keys(dictionary)", categories)
+        self.assertIn("if index > maximum then break end", categories)
+        self.assertIn("return result, #keys > maximum", categories)
+        self.assertNotIn("in pairs(dictionary)", categories)
+        self.assertNotIn("in pairs(allowed)", categories)
+        # Module capability comes from the same prototype members the blueprint
+        # validator rejects against, so a client can pre-check its own layout.
+        blueprints = (ROOT / "src/game/aiBlueprints.lua").read_text(encoding="utf-8")
+        for member in (
+            "prototype.allowed_module_categories",
+            "prototype.allowed_effects",
+            "prototype.module_inventory_size",
+        ):
+            self.assertIn(member, blueprints)
+            self.assertIn(member, telemetry)
+        self.assertIn("prototype.crafting_categories", telemetry)
+
+    def test_prototype_reads_keep_their_operation_and_capability(self):
+        tools = (ROOT / "mcp/src/catalog/tools.ts").read_text(encoding="utf-8")
+        self.assertIn('operation: "prototype.get"', tools)
+        self.assertIn('name: "get_prototype"', tools)
+        get_prototype = tools[
+            tools.index('name: "get_prototype"') :
+            tools.index('name: "get_transport_capacities"')
+        ]
+        self.assertIn('capability: "prototypes:read"', get_prototype)
+        self.assertIn("readOnly: true", get_prototype)
+
     def test_failed_pairing_exchanges_are_rate_limited_before_code_consumption(self):
         gateway = (ROOT / "src/game/aiGateway.lua").read_text(encoding="utf-8")
         self.assertIn("MAX_PAIRING_FAILURES_PER_MINUTE", gateway)

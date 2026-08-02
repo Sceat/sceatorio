@@ -7,6 +7,25 @@ local MAX_INVENTORY_TYPES = 100
 local MAX_ENTITY_REFS = 2000
 local ENTITY_REF_SCHEMA_VERSION = 2
 
+-- Prototype shape bounds. The binding constraint is the 48 KiB gateway
+-- response datagram (AiConstants.MAX_DATAGRAM_BYTES), not these counts: a
+-- fully saturated pipe connection encodes to roughly 410 bytes, so 32 total
+-- connections plus 16 boxes plus two 32-entry category lists is about 18 KiB
+-- of new payload in the worst case. Vanilla never comes close - the widest
+-- fluid entities are the oil refinery (5 boxes, 1 connection each) and the
+-- storage tank (1 box, 4 connections), both well under 2 KiB.
+local MAX_FLUID_BOXES = 16
+local MAX_PIPE_CONNECTIONS = 8
+local MAX_PIPE_CONNECTIONS_TOTAL = 32
+local MAX_CONNECTION_CATEGORIES = 4
+local MAX_PROTOTYPE_CATEGORIES = 32
+local MAX_MODULE_EFFECTS = 16
+
+-- PipeConnectionDefinition.positions holds the four cardinal connection points
+-- of one connection, in engine order, so a client can pick the tile for the
+-- direction it intends to place the entity in without guessing.
+local FLUID_BOX_POSITION_ORDER = {"north", "east", "south", "west"}
+
 local STATUS_NAME = {}
 for name, value in pairs(defines.entity_status) do
   STATUS_NAME[value] = name
@@ -108,6 +127,16 @@ end
 
 local function copy_position(position)
   return {x = position.x, y = position.y}
+end
+
+-- Prototype-stage MapPosition and Vector values may arrive in either the named
+-- or the array form, so normalise both before they reach a client.
+local function copy_vector(vector)
+  if type(vector) ~= "table" then return nil end
+  local x = vector.x or vector[1]
+  local y = vector.y or vector[2]
+  if not finite(x) or not finite(y) then return nil end
+  return {x = x, y = y}
 end
 
 local function safe_value(callback)
@@ -548,6 +577,118 @@ local function plain_place_items(prototype)
   return result
 end
 
+local function pipe_connection(connection)
+  local positions = {}
+  for index, position in ipairs(connection.positions or {}) do
+    if index > #FLUID_BOX_POSITION_ORDER then break end
+    local point = copy_vector(position)
+    -- A hole would silently shift the remaining cardinal points onto the wrong
+    -- tiles, so one unreadable point drops the whole list instead.
+    if not point then
+      positions = {}
+      break
+    end
+    positions[#positions + 1] = point
+  end
+  local categories = {}
+  for index, category in ipairs(connection.connection_category or {}) do
+    if index > MAX_CONNECTION_CATEGORIES then break end
+    categories[#categories + 1] = category
+  end
+  return {
+    connectionType = connection.connection_type,
+    flowDirection = connection.flow_direction,
+    direction = connection.direction,
+    positions = positions,
+    connectionCategories = categories,
+    maxUndergroundDistance = connection.max_underground_distance,
+    -- Present only on connections that carry an alternate layout; without them
+    -- a client would compute the primary tile for an entity using the alt one.
+    altDirection = connection.alt_direction,
+    altPosition = copy_vector(connection.alt_position)
+  }
+end
+
+-- Fluidbox prototypes and their pipe connections are engine-ordered arrays, so
+-- the response order is deterministic without sorting.
+local function fluid_boxes(prototype)
+  local boxes = {}
+  local truncated = false
+  local connection_budget = MAX_PIPE_CONNECTIONS_TOTAL
+  for index, box in ipairs(prototype.fluidbox_prototypes or {}) do
+    if index > MAX_FLUID_BOXES then
+      truncated = true
+      break
+    end
+    local connections = {}
+    for connection_index, connection in ipairs(box.pipe_connections or {}) do
+      if connection_index > MAX_PIPE_CONNECTIONS or connection_budget <= 0 then
+        truncated = true
+        break
+      end
+      connection_budget = connection_budget - 1
+      connections[#connections + 1] = pipe_connection(connection)
+    end
+    local filter = box.filter
+    boxes[#boxes + 1] = {
+      index = box.index,
+      productionType = box.production_type,
+      filter = filter and filter.name or nil,
+      minimumTemperature = box.minimum_temperature,
+      maximumTemperature = box.maximum_temperature,
+      volume = safe_value(function() return box.get_volume("normal") end),
+      connections = connections
+    }
+  end
+  return boxes, truncated
+end
+
+local function inserter_geometry(prototype)
+  local pickup = copy_vector(prototype.inserter_pickup_position)
+  local drop = copy_vector(prototype.inserter_drop_position)
+  if not pickup and not drop then return nil end
+  return {
+    pickupPosition = pickup,
+    dropPosition = drop,
+    chasesBeltItems = prototype.inserter_chases_belt_items,
+    bulk = prototype.bulk,
+    stackSizeBonus = prototype.inserter_stack_size_bonus,
+    usesStackSizeBonus = prototype.uses_inserter_stack_size_bonus,
+    maxBeltStackSize = prototype.inserter_max_belt_stack_size,
+    filterCount = prototype.filter_count,
+    rotationSpeedPerTick = safe_value(function() return prototype.get_inserter_rotation_speed("normal") end),
+    extensionSpeedPerTick = safe_value(function() return prototype.get_inserter_extension_speed("normal") end)
+  }
+end
+
+-- Sorted so a set-valued prototype member (allowed module categories, crafting
+-- categories) reaches the client in a stable order.
+local function bounded_categories(dictionary, maximum)
+  if type(dictionary) ~= "table" then return nil, nil end
+  local keys = sorted_keys(dictionary)
+  local result = {}
+  for index, key in ipairs(keys) do
+    if index > maximum then break end
+    result[#result + 1] = key
+  end
+  return result, #keys > maximum
+end
+
+-- The blueprint validator reads prototype.allowed_effects and blocks a module
+-- whose positive effect is not truthy there, so the same dictionary is the
+-- fact a client needs before it lays out a modded machine. An effect missing
+-- from this list is disallowed, exactly as the validator treats it.
+local function module_effects(prototype)
+  local allowed = prototype.allowed_effects
+  if type(allowed) ~= "table" then return nil, nil end
+  local names, truncated = bounded_categories(allowed, MAX_MODULE_EFFECTS)
+  local effects = {}
+  for _, name in ipairs(names) do
+    effects[#effects + 1] = {name = name, allowed = allowed[name] and true or false}
+  end
+  return effects, truncated
+end
+
 function Telemetry.prototype(context, payload)
   if type(payload) ~= "table" or not valid_string(payload.name, 200) then
     return nil, "INVALID_PROTOTYPE", "prototype request is invalid"
@@ -567,6 +708,24 @@ function Telemetry.prototype(context, payload)
     result.energyProductionW = prototype.get_max_energy_production("normal")
     result.fluidCapacity = prototype.get_fluid_capacity("normal")
     result.placeItems = plain_place_items(prototype)
+    result.fluidBoxes, result.fluidBoxesTruncated = safe_value(function() return fluid_boxes(prototype) end)
+    if result.fluidBoxes and #result.fluidBoxes > 0 then
+      result.fluidBoxPositionOrder = {}
+      for _, cardinal in ipairs(FLUID_BOX_POSITION_ORDER) do
+        result.fluidBoxPositionOrder[#result.fluidBoxPositionOrder + 1] = cardinal
+      end
+    end
+    result.inserter = safe_value(function() return inserter_geometry(prototype) end)
+    result.moduleInventorySize = safe_value(function() return prototype.module_inventory_size end)
+    result.allowedModuleCategories, result.allowedModuleCategoriesTruncated = safe_value(function()
+      return bounded_categories(prototype.allowed_module_categories, MAX_PROTOTYPE_CATEGORIES)
+    end)
+    result.allowedEffects, result.allowedEffectsTruncated = safe_value(function()
+      return module_effects(prototype)
+    end)
+    result.craftingCategories, result.craftingCategoriesTruncated = safe_value(function()
+      return bounded_categories(prototype.crafting_categories, MAX_PROTOTYPE_CATEGORIES)
+    end)
   elseif payload.type == "item" then
     result.stackSize = prototype.stack_size
     result.weight = prototype.weight
