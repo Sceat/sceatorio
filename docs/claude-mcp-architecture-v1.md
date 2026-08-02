@@ -34,12 +34,11 @@ Factorio synchronizes incoming UDP data as multiplayer input actions. Other peer
 
 ## Layered enablement and configuration
 
-AI assistance is off by default. Access is the intersection of all four layers:
+AI assistance is off by default. Access is the intersection of all three layers:
 
-1. **Server policy:** an administrator explicitly enables the Factorio gateway and sets allowed capabilities, per-player rates, save-wide total and expensive request rates, binding lifetime, and page size. The TypeScript companion separately bounds request timeouts; event-ring and blueprint limits are fixed implementation constants.
+1. **Server policy:** an administrator explicitly enables the Factorio gateway and sets allowed capabilities, per-player rates, and save-wide total and expensive request rates. The TypeScript companion separately bounds request timeouts; binding lifetime, page size, event-ring, and blueprint limits are fixed implementation constants.
 2. **Force technology:** the single `AI Assistance` technology costs only automation science and unlocks the powered Uplink plus dedicated input/output ports. A force unlock never opts a human in.
-3. **Player preference:** each human independently opts in, chooses requested capabilities, and either keeps blueprint delivery inbox-only or permits explicit cursor delivery. The descriptor's notification field is fixed to `important` in v1.
-4. **Pairing grant:** a short-lived, single-use code from a powered Uplink binds one local MCP subject to one human, save, force, team, and explicit surface grants. The player can revoke bindings from the Uplink GUI.
+3. **Pairing grant:** a short-lived, single-use code from a powered Uplink binds one local MCP subject to one human, save, force, team, and explicit surface grants. The player can revoke bindings from the Uplink GUI.
 
 One logical quota follows the human even when they connect several Claude clients. Tokens are per human, not per force. Two atomic save-wide fixed-window counters separately limit total and expensive requests without resetting or bypassing the per-human counters. No bearer token is represented as a Factorio mod setting.
 
@@ -119,7 +118,7 @@ The scaffold deliberately does not invent an authorization server. Production de
 
 ## Implemented local path and remaining deployment boundary
 
-The Factorio mod ships the one-technology prototypes, powered Uplink GUI, global and per-player opt-ins, one-time pairing/revocation, save/player/force/surface/capability checks, shared per-player quotas, bounded UDP dispatcher, all 24 operation handlers, bounded event waits, structured blueprint validation and per-player inbox, cursor-only opt-in delivery, dedicated circuit ports, TTL-cleared writes, and private annotations.
+The Factorio mod ships the one-technology prototypes, powered Uplink GUI, the global opt-in, one-time pairing/revocation, save/player/force/surface/capability checks, shared per-player quotas, bounded UDP dispatcher, all 24 operation handlers, bounded event waits, structured blueprint validation and per-player inbox, explicitly requested clipboard delivery, dedicated circuit ports, TTL-cleared writes, and private annotations.
 
 The real Factorio 2.1.12 gate starts an isolated dedicated server with Lua UDP, exchanges actual gateway datagrams, exercises all 24 operation paths, drives the compiled MCP server through an independent stdio client, and covers exact pairing/operation replay, UUID conflict without code consumption, policy-off buffering, authorization-before-cache, expiry, force/surface mismatch, shared quota across re-pairing, and revocation. The headless annotation path intentionally proves the real-player requirement by receiving `PLAYER_REQUIRED`.
 

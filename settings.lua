@@ -68,24 +68,6 @@ data:extend({
     order = "b[security]-b[electricity-sharing-policy]"
   },
   {
-    type = "int-setting",
-    name = "sceatorio-electricity-audit-budget",
-    setting_type = "runtime-global",
-    default_value = 64,
-    minimum_value = 1,
-    maximum_value = 1024,
-    order = "b[security]-c[electricity-audit-budget]"
-  },
-  {
-    type = "int-setting",
-    name = "sceatorio-electricity-migration-chunks-per-audit",
-    setting_type = "runtime-global",
-    default_value = 2,
-    minimum_value = 1,
-    maximum_value = 32,
-    order = "b[security]-d[electricity-migration]"
-  },
-  {
     type = "bool-setting",
     name = "sceatorio-offline-defense-enabled",
     setting_type = "runtime-global",
@@ -192,38 +174,6 @@ data:extend({
     minimum_value = 1,
     maximum_value = 36000,
     order = "e[ai]-f[global-expensive-requests-per-minute]"
-  },
-  {
-    type = "int-setting",
-    name = "sceatorio-ai-binding-lifetime-hours",
-    setting_type = "runtime-global",
-    default_value = 24,
-    minimum_value = 1,
-    maximum_value = 720,
-    order = "e[ai]-g[binding-lifetime]"
-  },
-  {
-    type = "int-setting",
-    name = "sceatorio-ai-max-page-size",
-    setting_type = "runtime-global",
-    default_value = 100,
-    minimum_value = 1,
-    maximum_value = 200,
-    order = "e[ai]-h[max-page-size]"
-  },
-  {
-    type = "string-setting",
-    name = "sceatorio-ai-requested-capabilities",
-    setting_type = "runtime-per-user",
-    default_value = AiConstants.DEFAULT_CAPABILITIES_CSV,
-    order = "e[ai]-j[player-capabilities]"
-  },
-  {
-    type = "bool-setting",
-    name = "sceatorio-ai-blueprint-cursor-delivery",
-    setting_type = "runtime-per-user",
-    default_value = false,
-    order = "e[ai]-k[cursor-delivery]"
   },
   {
     type = "bool-setting",

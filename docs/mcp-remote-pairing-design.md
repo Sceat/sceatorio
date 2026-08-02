@@ -31,9 +31,10 @@ example is `claude mcp add --transport http secure-api https://api.example.com/m
 "Authorization: Bearer your-token"`, and it documents `-t`/`-H` short forms plus
 `--scope user|project|local`.
 
-**Expiry.** The binding lives 24 *game*-hours (`sceatorio-ai-binding-lifetime-hours`, server
-setting). After that every tool answers `TOKEN_EXPIRED`. The fix is one loop: new code at the
-Uplink, paste it on the page, then `claude mcp remove sceatorio -s user` and run the new line.
+**Expiry.** The binding lives a fixed 24 *game*-hours (`BINDING_LIFETIME_HOURS` in
+`src/game/aiGateway.lua`). After that every tool answers `TOKEN_EXPIRED`. The fix is one
+loop: new code at the Uplink, paste it on the page, then `claude mcp remove sceatorio -s user`
+and run the new line.
 
 **Revoke.** Uplink GUI → the binding row → **Revoke**; it takes effect on the player's next
 request, because Lua re-authorizes the live binding on every single call. Also automatic on:

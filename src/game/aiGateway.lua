@@ -28,6 +28,8 @@ local MAX_INGRESS_PACKETS = 64
 local MAX_INGRESS_PACKETS_PER_TICK = 4
 local MAX_PAIRING_FAILURES_PER_MINUTE = 10
 local PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+local BINDING_LIFETIME_HOURS = 24
+local MAX_PAGE_SIZE = 100
 
 local SUPPORTED_CAPABILITIES = AiConstants.CAPABILITY_SET
 local pending_pairings = {}
@@ -42,13 +44,6 @@ local pairing_failures = {window_tick = -1, count = 0}
 
 local function global_value(name, fallback)
   local setting = settings.global[name]
-  return setting and setting.value or fallback
-end
-
-local function player_value(player, name, fallback)
-  if not (player and player.valid) then return fallback end
-  local values = settings.get_player_settings(player)
-  local setting = values and values[name]
   return setting and setting.value or fallback
 end
 
@@ -150,26 +145,17 @@ local function allowed_capabilities()
   ))
 end
 
-local function requested_capabilities(player)
-  return parse_capabilities(player_value(
-    player,
-    "sceatorio-ai-requested-capabilities",
-    AiConstants.DEFAULT_CAPABILITIES_CSV
-  ))
-end
-
 local function force_technology(force, name)
   local technology = force and force.valid and force.technologies[name] or nil
   return technology and technology.researched or false
 end
 
-local function effective_capabilities(force, player, dev_virtual)
+local function effective_capabilities(force)
   if not force_technology(force, AiConstants.TECHNOLOGY) then return {} end
   local allowed = allowed_capabilities()
-  local requested = dev_virtual and SUPPORTED_CAPABILITIES or requested_capabilities(player)
   local capabilities = {}
   for capability in pairs(SUPPORTED_CAPABILITIES) do
-    if allowed[capability] and requested[capability] then capabilities[capability] = true end
+    if allowed[capability] then capabilities[capability] = true end
   end
   return capabilities
 end
@@ -239,7 +225,7 @@ local function descriptor(binding)
       enabled = true,
       requestedCapabilities = sorted_capabilities(binding.capabilities),
       notifications = "important",
-      blueprintDelivery = binding.allow_cursor and "allow-cursor" or "inbox-only"
+      blueprintDelivery = "allow-cursor"
     },
     issuedTick = binding.issued_tick,
     expiresTick = binding.expires_tick
@@ -278,7 +264,6 @@ local function create_binding_record(options)
   local seed = game.default_map_gen_settings.seed or 0
   local sequence = ai.next_binding_id
   ai.next_binding_id = sequence + 1
-  local lifetime_hours = math.max(1, math.min(720, global_value("sceatorio-ai-binding-lifetime-hours", 24)))
   local binding = {
     id = "binding:" .. uuid(seed, sequence + 1000),
     save_id = ensure_save_id(),
@@ -293,8 +278,7 @@ local function create_binding_record(options)
     uplink_unit_number = options.uplink.unit_number,
     uplink_entity = options.uplink,
     issued_tick = game.tick,
-    expires_tick = game.tick + math.floor(lifetime_hours * 60 * 60 * 60),
-    allow_cursor = options.allow_cursor,
+    expires_tick = game.tick + math.floor(BINDING_LIFETIME_HOURS * 60 * 60 * 60),
     dev_virtual = options.dev_virtual or false
   }
   ai.bindings[binding.id] = binding
@@ -315,8 +299,8 @@ local function player_pairing_options(player, uplink)
   end
   local powered, reason = uplink_powered(uplink, player.force)
   if not powered then return nil, reason end
-  local capabilities = effective_capabilities(player.force, player, false)
-  if not next(capabilities) then return nil, "No AI capabilities are enabled by both server and player policy." end
+  local capabilities = effective_capabilities(player.force)
+  if not next(capabilities) then return nil, "No AI capabilities are enabled by server policy." end
   return {
     player_index = player.index,
     player_id = "player:" .. player.index,
@@ -324,8 +308,7 @@ local function player_pairing_options(player, uplink)
     team_id = "team:" .. team.id,
     surfaces = binding_surfaces(team, uplink.surface, physical_player_surface(player)),
     capabilities = capabilities,
-    uplink = uplink,
-    allow_cursor = player_value(player, "sceatorio-ai-blueprint-cursor-delivery", false)
+    uplink = uplink
   }
 end
 
@@ -563,7 +546,7 @@ local function authorize(request)
     return nil, "TECHNOLOGY_REQUIRED", "Force has not researched AI Assistance"
   end
   local capability = Operations.CAPABILITY_BY_OPERATION[request.operation]
-  local current_capabilities = effective_capabilities(force, player, binding.dev_virtual)
+  local current_capabilities = effective_capabilities(force)
   if not binding.capabilities[capability] or not current_capabilities[capability] then
     return nil, "INSUFFICIENT_CAPABILITY", "Pairing does not allow " .. capability
   end
@@ -586,10 +569,8 @@ local function authorize(request)
     surface = surface,
     surface_id = surface_id,
     surface_ids_by_index = surface_ids_by_index,
-    allow_cursor = not binding.dev_virtual
-      and binding.allow_cursor
-      and player_value(player, "sceatorio-ai-blueprint-cursor-delivery", false),
-    max_page_size = math.max(1, math.min(200, global_value("sceatorio-ai-max-page-size", 100)))
+    allow_cursor = not binding.dev_virtual,
+    max_page_size = MAX_PAGE_SIZE
   }
 end
 
@@ -866,7 +847,7 @@ local function materialize_pending_pairing(pending)
       return nil, "TECHNOLOGY_REQUIRED", "Force has not researched AI Assistance"
     end
     local surface = game.get_surface(pending.primary_surface_index) or uplink.surface
-    local capabilities = effective_capabilities(force, nil, true)
+    local capabilities = effective_capabilities(force)
     if not next(capabilities) then
       return nil, "INSUFFICIENT_CAPABILITY", "No AI capabilities are enabled by server policy"
     end
@@ -878,7 +859,6 @@ local function materialize_pending_pairing(pending)
       surfaces = binding_surfaces(nil, surface, nil),
       capabilities = capabilities,
       uplink = uplink,
-      allow_cursor = false,
       dev_virtual = true
     }
   end
@@ -1157,7 +1137,7 @@ local function wait_context_valid(context)
   if binding.revoked_tick or binding.expires_tick <= game.tick then return false end
   local force = force_for_binding(binding)
   if not force or not force_technology(force, AiConstants.TECHNOLOGY) then return false end
-  local current_capabilities = effective_capabilities(force, context.player, binding.dev_virtual)
+  local current_capabilities = effective_capabilities(force)
   if not binding.capabilities["events:read"] or not current_capabilities["events:read"] then
     return false
   end
@@ -1697,10 +1677,9 @@ local function dev_pairing_options(command)
     force = force,
     team_id = "dev-team:" .. force.index,
     surfaces = binding_surfaces(nil, surface, nil),
-    capabilities = effective_capabilities(force, nil, true),
+    capabilities = effective_capabilities(force),
     uplink = uplink,
     primary_surface_index = surface.index,
-    allow_cursor = false,
     dev_virtual = true
   }
 end

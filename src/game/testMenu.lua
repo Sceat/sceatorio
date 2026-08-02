@@ -200,9 +200,7 @@ function TestMenu.on_gui_click(event)
   elseif action == "dev_tools_robot_status" then
     RobotPolicy.show_status(player)
   elseif action == "dev_tools_electricity_audit" then
-    local configured = settings.global["sceatorio-electricity-audit-budget"]
-    local budget = configured and configured.value or 64
-    local processed = Security.audit_poles(math.max(1, math.floor(budget)))
+    local processed = Security.audit_poles(Security.AUDIT_BUDGET)
     player.print({"sceatorio.dev-tools-audit-result", processed})
   elseif action == "dev_tools_research_all" then
     local record = Teams.get_for_player(player)

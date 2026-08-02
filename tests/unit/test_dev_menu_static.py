@@ -67,8 +67,10 @@ class DevMenuTests(unittest.TestCase):
         self.assertIn("Evolution.get_factor", menu)
         self.assertIn("OfflineSecurity.status", menu)
         self.assertIn("RobotPolicy.show_status", menu)
-        self.assertIn("Security.audit_poles", menu)
-        self.assertIn("sceatorio-electricity-audit-budget", menu)
+        self.assertIn("Security.audit_poles(Security.AUDIT_BUDGET)", menu)
+        # The manual audit shares the tick's fixed budget instead of re-reading
+        # a removed operator setting.
+        self.assertNotIn("sceatorio-electricity-audit-budget", menu)
 
     def test_research_all_is_admin_dev_gui_only_and_force_local(self) -> None:
         menu = source("src/game/testMenu.lua")

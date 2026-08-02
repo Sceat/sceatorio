@@ -35,22 +35,24 @@ class ReleaseSingleSourceOfTruthTests(unittest.TestCase):
 
     def test_ai_capability_setting_defaults_come_from_lua_constants(self):
         expected = sync_docs.default_capabilities_csv()
+        settings = sync_docs.parse_settings()
         defaults = {
             setting.name: setting.default
-            for setting in sync_docs.parse_settings()
-            if setting.name in {
-                "sceatorio-ai-allowed-capabilities",
-                "sceatorio-ai-requested-capabilities",
-            }
+            for setting in settings
+            if setting.name == "sceatorio-ai-allowed-capabilities"
         }
 
         self.assertEqual(len(expected.split(",")), 16)
         self.assertEqual(
             defaults,
-            {
-                "sceatorio-ai-allowed-capabilities": expected,
-                "sceatorio-ai-requested-capabilities": expected,
-            },
+            {"sceatorio-ai-allowed-capabilities": expected},
+        )
+        # 2.0.9 removed the per-player narrowing list: the server allowlist is
+        # the only capability policy, so every setting is runtime-global.
+        names = {setting.name for setting in settings}
+        self.assertNotIn("sceatorio-ai-requested-capabilities", names)
+        self.assertEqual(
+            {setting.scope for setting in settings}, {"runtime-global"}
         )
 
     def test_ai_icon_provenance_and_runtime_selection_are_machine_checked(self):

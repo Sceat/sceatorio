@@ -21,13 +21,56 @@ class AiGatewayStaticTests(unittest.TestCase):
         gateway = (ROOT / "src/game/aiGateway.lua").read_text(encoding="utf-8")
         locale = (ROOT / "locale/en/sceatorio.cfg").read_text(encoding="utf-8")
         self.assertIn('name = "sceatorio-ai-enabled"', settings)
-        self.assertIn('setting_type = "runtime-per-user"', settings)
         self.assertIn('name = "sceatorio-ai-requests-per-minute"', settings)
         # The redundant per-player enable switch was removed in 2.0.5; creating
         # a pairing code at a powered Uplink is the explicit personal opt-in.
         self.assertNotIn("sceatorio-ai-assistance-enabled", settings)
         self.assertNotIn("sceatorio-ai-assistance-enabled", gateway)
         self.assertNotIn("sceatorio-ai-assistance-enabled", locale)
+        # 2.0.9 finished the same cleanup: pairing at a powered Uplink is the
+        # only personal consent, so no per-player setting survives at all.
+        self.assertNotIn("runtime-per-user", settings)
+        for removed in (
+            "sceatorio-ai-requested-capabilities",
+            "sceatorio-ai-blueprint-cursor-delivery",
+            "sceatorio-ai-max-page-size",
+            "sceatorio-ai-binding-lifetime-hours",
+        ):
+            self.assertNotIn(removed, settings)
+            self.assertNotIn(removed, gateway)
+            self.assertNotIn(removed, locale)
+        self.assertNotIn("settings.get_player_settings", gateway)
+
+    def test_pairing_grants_the_full_server_capability_set(self):
+        gateway = (ROOT / "src/game/aiGateway.lua").read_text(encoding="utf-8")
+        effective = gateway[
+            gateway.index("local function effective_capabilities") :
+            gateway.index("local function physical_player_surface")
+        ]
+        # A player's capabilities are exactly the server allowlist intersected
+        # with the supported set and the researched technology.
+        self.assertIn("allowed_capabilities()", effective)
+        self.assertIn("if allowed[capability] then", effective)
+        self.assertNotIn("requested", effective)
+
+    def test_blueprint_clipboard_delivery_is_always_allowed_for_real_players(self):
+        gateway = (ROOT / "src/game/aiGateway.lua").read_text(encoding="utf-8")
+        descriptor = gateway[
+            gateway.index("local function descriptor(binding)") :
+            gateway.index("local function uplink_powered")
+        ]
+        self.assertIn('blueprintDelivery = "allow-cursor"', descriptor)
+        # Dev pairings keep cursor delivery off: headless has no connected
+        # player, and deliver_to_clipboard requires one.
+        self.assertIn("allow_cursor = not binding.dev_virtual,", gateway)
+        self.assertNotIn("binding.allow_cursor", gateway)
+
+    def test_binding_lifetime_and_page_size_are_fixed_constants(self):
+        gateway = (ROOT / "src/game/aiGateway.lua").read_text(encoding="utf-8")
+        self.assertIn("local BINDING_LIFETIME_HOURS = 24", gateway)
+        self.assertIn("local MAX_PAGE_SIZE = 100", gateway)
+        self.assertIn("BINDING_LIFETIME_HOURS * 60 * 60 * 60", gateway)
+        self.assertIn("max_page_size = MAX_PAGE_SIZE", gateway)
 
     def test_entity_resolution_and_annotations_require_a_scoped_surface(self):
         telemetry = (ROOT / "src/game/aiTelemetry.lua").read_text(encoding="utf-8")

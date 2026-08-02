@@ -98,7 +98,11 @@ class ElectricityIsolationTests(unittest.TestCase):
         security = source("src/game/security.lua")
         self.assertIn("on_selected_entity_changed", control)
         self.assertIn("audit_poles", security)
-        self.assertIn("sceatorio-electricity-audit-budget", security)
+        # 2.0.9 froze the budget as a module constant; it was never an
+        # operator-tunable knob, only a UPS-safety bound.
+        self.assertIn("local AUDIT_BUDGET = 64", security)
+        self.assertIn("Security.audit_poles(AUDIT_BUDGET)", security)
+        self.assertNotIn("sceatorio-electricity-audit-budget", security)
         self.assertNotIn("game.get_entity_by_unit_number", security)
 
     def test_existing_save_poles_use_a_bounded_chunk_migration(self) -> None:
@@ -106,7 +110,9 @@ class ElectricityIsolationTests(unittest.TestCase):
         security = source("src/game/security.lua")
         self.assertIn("get_chunks", security)
         self.assertIn("chunk_migration", security)
-        self.assertIn("sceatorio-electricity-migration-chunks-per-audit", security)
+        self.assertIn("local MIGRATION_CHUNKS = 2", security)
+        self.assertIn("Security.migrate_existing_poles(MIGRATION_CHUNKS)", security)
+        self.assertNotIn("sceatorio-electricity-migration-chunks-per-audit", security)
         self.assertIn("on_surface_created", control)
         self.assertIn("on_force_created", control)
         self.assertNotRegex(
@@ -142,13 +148,18 @@ class SecuritySettingsTests(unittest.TestCase):
         locale = source("locale/en/sceatorio.cfg")
         expected = (
             "sceatorio-electricity-isolation",
-            "sceatorio-electricity-audit-budget",
-            "sceatorio-electricity-migration-chunks-per-audit",
+            "sceatorio-electricity-sharing-policy",
             "sceatorio-offline-defense-enabled",
         )
         for name in expected:
             self.assertIn(name, settings)
             self.assertIn(name, locale)
+        for removed in (
+            "sceatorio-electricity-audit-budget",
+            "sceatorio-electricity-migration-chunks-per-audit",
+        ):
+            self.assertNotIn(removed, settings)
+            self.assertNotIn(removed, locale)
         self.assertGreaterEqual(settings.count('setting_type = "runtime-global"'), 10)
 
     def test_team_charting_uses_only_bounded_physical_sources(self) -> None:

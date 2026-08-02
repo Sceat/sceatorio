@@ -5,13 +5,16 @@ local Security = {}
 
 local WARNING_INTERVAL = 5 * 60
 local DISCOVERY_LIMIT_MULTIPLIER = 4
-local DEFAULT_AUDIT_BUDGET = 64
-local DEFAULT_MIGRATION_CHUNKS = 2
+local AUDIT_BUDGET = 64
+local MIGRATION_CHUNKS = 2
 local DEFERRED_BUILD_AUDIT_BUDGET = 8
 local MAX_PENDING_BUILD_AUDITS = 4096
 local MAX_LOCAL_CHILD_POLES = 16
 local MAX_LOCAL_POLE_SCAN = 256
 local MAX_LOCAL_SUPPLIED_ENTITIES = 256
+
+-- Exposed so the dev menu's manual audit runs the same fixed budget as the tick.
+Security.AUDIT_BUDGET = AUDIT_BUDGET
 
 -- Chunk iterators are runtime-only LuaObjects. Durable progress is kept as a
 -- count and replayed within the same per-tick budget after a save reload.
@@ -649,21 +652,6 @@ function Security.on_selected_entity_changed(event)
   end
 end
 
-local function configured_audit_budget()
-  local budget = setting("sceatorio-electricity-audit-budget", DEFAULT_AUDIT_BUDGET)
-  if type(budget) ~= "number" then return DEFAULT_AUDIT_BUDGET end
-  return math.max(1, math.floor(budget))
-end
-
-local function configured_migration_chunks()
-  local budget = setting(
-    "sceatorio-electricity-migration-chunks-per-audit",
-    DEFAULT_MIGRATION_CHUNKS
-  )
-  if type(budget) ~= "number" then return DEFAULT_MIGRATION_CHUNKS end
-  return math.max(1, math.floor(budget))
-end
-
 function Security.audit_poles(budget)
   if not isolation_enabled() then return 0 end
   local registry = ensure_security_root().pole_registry
@@ -768,7 +756,7 @@ function Security.on_player_cursor_stack_changed(event)
   if not isolation_enabled() then return end
   audit_near_player(
     game.players[event.player_index],
-    configured_audit_budget() * DISCOVERY_LIMIT_MULTIPLIER
+    AUDIT_BUDGET * DISCOVERY_LIMIT_MULTIPLIER
   )
 end
 
@@ -794,8 +782,8 @@ function Security.on_tick(event)
 end
 
 function Security.tick()
-  Security.audit_poles(configured_audit_budget())
-  Security.migrate_existing_poles(configured_migration_chunks())
+  Security.audit_poles(AUDIT_BUDGET)
+  Security.migrate_existing_poles(MIGRATION_CHUNKS)
 end
 
 function Security.on_surface_created(event)
