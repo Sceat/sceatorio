@@ -2,12 +2,35 @@ local State = require("src.core.state")
 
 local Blueprints = {}
 
-local MAX_ENTITIES = 512
-local MAX_TILES = 2048
+-- Entity and tile counts are shape bounds; the binding constraint is the 48 KiB
+-- gateway request datagram (AiConstants.MAX_DATAGRAM_BYTES). A measured plain
+-- entity costs ~98 JSON bytes and a tile ~58, so the historical 512/2048 pair
+-- needed 172 KiB and could never reach Factorio at all. MAX_LAYOUT_BYTES is the
+-- real guarantee: 44 KiB of canonical layout JSON leaves over 2 KiB of headroom
+-- for the largest possible request envelope inside one datagram.
+local MAX_ENTITIES = 400
+local MAX_TILES = 512
+local MAX_LAYOUT_BYTES = 44 * 1024
+-- Records saved before the authoring bound tightened stay readable: migration
+-- must never delete a blueprint that was legal when it was stored, so the
+-- persistence ceiling keeps the historical maximum and the per-player byte
+-- budget remains the bound that actually protects the save file.
+local MAX_STORED_ENTITIES = 512
 local MAX_BLUEPRINTS_PER_PLAYER = 100
 local MAX_BLUEPRINT_BYTES_PER_PLAYER = 512 * 1024
-local BLUEPRINT_INBOX_SCHEMA_VERSION = 2
+local BLUEPRINT_INBOX_SCHEMA_VERSION = 3
 local MAX_ISSUES = 100
+
+local MAX_MODULE_KINDS = 8
+local MAX_MODULE_COUNT = 100
+local MAX_FILTERS = 32
+local MAX_REQUEST_FILTERS = 40
+local MAX_SECTIONS = 8
+local MAX_SECTION_FILTERS = 40
+local MAX_DECIDER_CONDITIONS = 16
+local MAX_DECIDER_OUTPUTS = 16
+local INT32_MIN = -2147483648
+local INT32_MAX = 2147483647
 
 local function ai_root()
   local root = State.get()
@@ -52,9 +75,148 @@ local function clone_plain(value, depth)
   return result
 end
 
--- Persist only the documented safe-layout subset. Validation deliberately
--- tolerates unknown JSON keys for forward compatibility; they must not become
--- an unbounded side channel into the save file.
+-- The documented safe-layout whitelist. Every persisted key is declared here
+-- once and copied field by field; `copy_shape` never walks a table it was not
+-- told about, so unknown JSON keys are dropped instead of becoming an unbounded
+-- side channel into the save file. Validation still tolerates unknown keys for
+-- forward compatibility. Adding a field means adding it here, to the matching
+-- validator, and to the blueprint emitter.
+local SIGNAL_SHAPE = {scalars = {"type", "name", "quality"}}
+
+local CONDITION_SHAPE = {
+  scalars = {"comparator", "constant"},
+  objects = {firstSignal = SIGNAL_SHAPE, secondSignal = SIGNAL_SHAPE}
+}
+
+local ARITHMETIC_SHAPE = {
+  scalars = {"operation", "firstConstant", "secondConstant"},
+  objects = {
+    firstSignal = SIGNAL_SHAPE,
+    secondSignal = SIGNAL_SHAPE,
+    outputSignal = SIGNAL_SHAPE
+  }
+}
+
+local DECIDER_SHAPE = {
+  arrays = {
+    conditions = {
+      max = MAX_DECIDER_CONDITIONS,
+      shape = {
+        scalars = {"comparator", "constant", "compareType"},
+        objects = {firstSignal = SIGNAL_SHAPE, secondSignal = SIGNAL_SHAPE}
+      }
+    },
+    outputs = {
+      max = MAX_DECIDER_OUTPUTS,
+      shape = {
+        scalars = {"constant", "copyCountFromInput"},
+        objects = {signal = SIGNAL_SHAPE}
+      }
+    }
+  }
+}
+
+local SECTION_SHAPE = {
+  scalars = {"active"},
+  arrays = {
+    filters = {
+      max = MAX_SECTION_FILTERS,
+      shape = {scalars = {"type", "name", "quality", "count"}}
+    }
+  }
+}
+
+local CONTROL_SHAPE = {
+  scalars = {
+    "circuitEnabled",
+    "connectToLogisticNetwork",
+    "readContents",
+    "readMode",
+    "readIngredients",
+    "readWorking",
+    "setRecipe",
+    "setFilters",
+    "setStackSize",
+    "setRequests"
+  },
+  objects = {
+    enabledCondition = CONDITION_SHAPE,
+    logisticCondition = CONDITION_SHAPE,
+    workingSignal = SIGNAL_SHAPE,
+    stackSizeSignal = SIGNAL_SHAPE,
+    arithmetic = ARITHMETIC_SHAPE,
+    decider = DECIDER_SHAPE
+  },
+  arrays = {sections = {max = MAX_SECTIONS, shape = SECTION_SHAPE}}
+}
+
+local ENTITY_EXTRA_SHAPE = {
+  scalars = {"filterMode", "inputPriority", "outputPriority", "requestFromBuffers"},
+  counts = {items = {max = MAX_MODULE_KINDS}},
+  objects = {control = CONTROL_SHAPE},
+  arrays = {
+    filters = {max = MAX_FILTERS, shape = {scalars = {"name", "quality"}}},
+    requestFilters = {
+      max = MAX_REQUEST_FILTERS,
+      shape = {scalars = {"name", "quality", "min", "max"}}
+    }
+  }
+}
+
+local function copy_shape(source, shape)
+  if type(source) ~= "table" then return nil end
+  local result = {}
+  local present = false
+  for _, key in ipairs(shape.scalars or {}) do
+    local value = source[key]
+    local kind = type(value)
+    if kind == "string" or kind == "number" or kind == "boolean" then
+      result[key] = value
+      present = true
+    end
+  end
+  for key, nested in pairs(shape.objects or {}) do
+    local child = copy_shape(source[key], nested)
+    if child ~= nil then
+      result[key] = child
+      present = true
+    end
+  end
+  for key, spec in pairs(shape.arrays or {}) do
+    local list = source[key]
+    if type(list) == "table" then
+      local copied = {}
+      for index, item in ipairs(list) do
+        if index > spec.max then break end
+        copied[#copied + 1] = copy_shape(item, spec.shape) or {}
+      end
+      if #copied > 0 then
+        result[key] = copied
+        present = true
+      end
+    end
+  end
+  for key, spec in pairs(shape.counts or {}) do
+    local map = source[key]
+    if type(map) == "table" then
+      local copied = {}
+      local kinds = 0
+      for name, count in pairs(map) do
+        if type(name) == "string" and type(count) == "number" and kinds < spec.max then
+          copied[name] = count
+          kinds = kinds + 1
+        end
+      end
+      if kinds > 0 then
+        result[key] = copied
+        present = true
+      end
+    end
+  end
+  if not present then return nil end
+  return result
+end
+
 local function canonical_layout(layout)
   local canonical = {
     name = layout.name,
@@ -85,6 +247,10 @@ local function canonical_layout(layout)
         end
         entity.connections[#entity.connections + 1] = connection
       end
+    end
+    local extras = copy_shape(source, ENTITY_EXTRA_SHAPE)
+    if extras then
+      for key, value in pairs(extras) do entity[key] = value end
     end
     canonical.entities[#canonical.entities + 1] = entity
   end
@@ -187,6 +353,475 @@ local function validate_connections(entity, known_numbers, errors, path)
   end
 end
 
+-- Module slots live in a different inventory per machine family. Factorio 2.1
+-- collapsed every crafting machine onto defines.inventory.crafter_modules; an
+-- entity family absent from this table is rejected rather than guessed at.
+local MODULE_INVENTORY = {
+  ["assembling-machine"] = "crafter_modules",
+  ["furnace"] = "crafter_modules",
+  ["rocket-silo"] = "crafter_modules",
+  ["lab"] = "lab_modules",
+  ["mining-drill"] = "mining_drill_modules",
+  ["beacon"] = "beacon_modules",
+  ["agricultural-tower"] = "agricultural_tower_modules"
+}
+
+local FILTER_KIND = {
+  ["inserter"] = "slots",
+  ["loader"] = "slots",
+  ["loader-1x1"] = "slots",
+  ["mining-drill"] = "drill",
+  ["splitter"] = "single",
+  ["lane-splitter"] = "single"
+}
+
+local FILTER_MODES = {
+  ["inserter"] = {whitelist = true, blacklist = true},
+  ["loader"] = {none = true, whitelist = true, blacklist = true},
+  ["loader-1x1"] = {none = true, whitelist = true, blacklist = true},
+  ["mining-drill"] = {whitelist = true, blacklist = true}
+}
+
+local SPLITTER_TYPES = {["splitter"] = true, ["lane-splitter"] = true}
+local SPLITTER_PRIORITIES = {left = true, right = true, none = true}
+
+local REQUEST_FILTER_TYPES = {
+  ["logistic-container"] = true,
+  ["infinity-container"] = true,
+  ["roboport"] = true,
+  ["cargo-landing-pad"] = true,
+  ["space-platform-hub"] = true
+}
+local REQUESTING_LOGISTIC_MODES = {requester = true, buffer = true}
+
+local CONTROL_KIND = {
+  ["inserter"] = "inserter",
+  ["transport-belt"] = "belt",
+  ["mining-drill"] = "drill",
+  ["assembling-machine"] = "crafter",
+  ["rocket-silo"] = "crafter",
+  ["furnace"] = "furnace",
+  ["logistic-container"] = "logistic-container",
+  ["infinity-container"] = "logistic-container",
+  ["arithmetic-combinator"] = "arithmetic",
+  ["decider-combinator"] = "decider",
+  ["constant-combinator"] = "constant",
+  ["pump"] = "generic",
+  ["offshore-pump"] = "generic",
+  ["power-switch"] = "generic",
+  ["lamp"] = "generic",
+  ["train-stop"] = "generic"
+}
+
+local ON_OFF_FIELDS = {
+  enabledCondition = true,
+  circuitEnabled = true,
+  logisticCondition = true,
+  connectToLogisticNetwork = true
+}
+
+local function on_off_fields_with(extra)
+  local fields = {}
+  for key in pairs(ON_OFF_FIELDS) do fields[key] = true end
+  for _, key in ipairs(extra) do fields[key] = true end
+  return fields
+end
+
+local CONTROL_FIELDS = {
+  ["inserter"] = on_off_fields_with({
+    "readContents", "readMode", "setFilters", "setStackSize", "stackSizeSignal"
+  }),
+  ["belt"] = on_off_fields_with({"readContents", "readMode"}),
+  ["drill"] = on_off_fields_with({"readContents", "readMode"}),
+  ["crafter"] = on_off_fields_with({
+    "readContents", "readIngredients", "readWorking", "workingSignal", "setRecipe"
+  }),
+  ["furnace"] = on_off_fields_with({
+    "readContents", "readIngredients", "readWorking", "workingSignal"
+  }),
+  ["logistic-container"] = {
+    enabledCondition = true,
+    circuitEnabled = true,
+    readContents = true,
+    setRequests = true
+  },
+  ["arithmetic"] = {arithmetic = true},
+  ["decider"] = {decider = true},
+  ["constant"] = {sections = true},
+  ["generic"] = ON_OFF_FIELDS
+}
+
+local READ_MODES = {
+  ["inserter"] = {pulse = "pulse", hold = "hold"},
+  ["belt"] = {pulse = "pulse", hold = "hold", ["entire-belt-hold"] = "entire_belt_hold"},
+  ["drill"] = {["this-miner"] = "this_miner", ["entire-patch"] = "entire_patch"}
+}
+
+-- Factorio runs Lua 5.2, which has no \u{} escape; the three Unicode
+-- comparators Factorio also accepts are spelled as raw UTF-8 bytes.
+local COMPARATORS = {
+  ["="] = true, [">"] = true, ["<"] = true, [">="] = true, ["<="] = true,
+  ["!="] = true,
+  ["\226\137\165"] = true, -- U+2265 greater than or equal to
+  ["\226\137\164"] = true, -- U+2264 less than or equal to
+  ["\226\137\160"] = true  -- U+2260 not equal to
+}
+
+local OPERATIONS = {
+  ["*"] = true, ["/"] = true, ["+"] = true, ["-"] = true, ["%"] = true,
+  ["^"] = true, ["<<"] = true, [">>"] = true,
+  ["AND"] = true, ["OR"] = true, ["XOR"] = true
+}
+
+local COMPARE_TYPES = {["and"] = true, ["or"] = true}
+
+local SIGNAL_REGISTRY = {
+  item = function() return prototypes.item end,
+  fluid = function() return prototypes.fluid end,
+  virtual = function() return prototypes.virtual_signal end
+}
+
+local function validate_quality(quality, errors, path)
+  if quality == nil then return end
+  if not valid_string(quality, 200) or not prototypes.quality[quality] then
+    add_issue(errors, "UNKNOWN_QUALITY", path, "quality prototype does not exist")
+  end
+end
+
+local function validate_signal(signal, errors, path)
+  if signal == nil then return end
+  if type(signal) ~= "table" then
+    add_issue(errors, "INVALID_SIGNAL", path, "signal must be an object")
+    return
+  end
+  local registry = SIGNAL_REGISTRY[signal.type]
+  if not registry then
+    add_issue(errors, "INVALID_SIGNAL_TYPE", path .. ".type", "signal type must be item, fluid, or virtual")
+    return
+  end
+  if not valid_string(signal.name, 200) or not registry()[signal.name] then
+    add_issue(errors, "UNKNOWN_SIGNAL", path .. ".name", "signal prototype does not exist")
+  end
+  validate_quality(signal.quality, errors, path .. ".quality")
+end
+
+local function validate_condition(condition, errors, path)
+  if condition == nil then return end
+  if type(condition) ~= "table" then
+    add_issue(errors, "INVALID_CONDITION", path, "condition must be an object")
+    return
+  end
+  if condition.comparator ~= nil and not COMPARATORS[condition.comparator] then
+    add_issue(errors, "INVALID_COMPARATOR", path .. ".comparator", "comparator must be one of =, >, <, >=, <=, !=")
+  end
+  if condition.constant ~= nil and not integer(condition.constant, INT32_MIN, INT32_MAX) then
+    add_issue(errors, "INVALID_CONSTANT", path .. ".constant", "constant must be a 32-bit signed integer")
+  end
+  validate_signal(condition.firstSignal, errors, path .. ".firstSignal")
+  validate_signal(condition.secondSignal, errors, path .. ".secondSignal")
+end
+
+local function validate_boolean(value, errors, path)
+  if value ~= nil and type(value) ~= "boolean" then
+    add_issue(errors, "INVALID_CONTROL_FIELD", path, "field must be a boolean")
+  end
+end
+
+local function validate_items(entity, prototype, build_cost, errors, path)
+  if entity.items == nil then return end
+  local items_path = path .. ".items"
+  if type(entity.items) ~= "table" then
+    add_issue(errors, "INVALID_ITEM_REQUESTS", items_path, "items must map item prototype names to positive counts")
+    return
+  end
+  local kinds = 0
+  local total = 0
+  for name, count in pairs(entity.items) do
+    kinds = kinds + 1
+    local item_path = items_path .. "." .. tostring(name)
+    if type(name) ~= "string" or #name < 1 or #name > 200
+      or not integer(count, 1, MAX_MODULE_COUNT) then
+      add_issue(errors, "INVALID_ITEM_REQUEST", item_path, "each item request must map a prototype name to a count from 1 through 100")
+    else
+      total = total + count
+      local item = prototypes.item[name]
+      if not item then
+        add_issue(errors, "UNKNOWN_ITEM", item_path, "item prototype does not exist")
+      elseif item.type ~= "module" then
+        add_issue(errors, "ITEM_IS_NOT_A_MODULE", item_path, "only module items can be requested into a blueprint entity")
+      else
+        build_cost[name] = (build_cost[name] or 0) + count
+        local categories = prototype.allowed_module_categories
+        if categories and not categories[item.category] then
+          add_issue(errors, "MODULE_CATEGORY_NOT_ALLOWED", item_path, "entity does not accept this module category")
+        end
+        -- Only a POSITIVE disallowed effect blocks a module. Factorio 2.1 gives
+        -- speed-module a quality effect of -0.01 while beacons set
+        -- allowed_effects.quality = false, and the engine still accepts speed
+        -- modules in beacons; it is the productivity gain of a productivity
+        -- module that a beacon refuses.
+        local allowed = prototype.allowed_effects
+        if allowed then
+          for effect, value in pairs(item.module_effects or {}) do
+            if value > 0 and not allowed[effect] then
+              add_issue(errors, "MODULE_EFFECT_NOT_ALLOWED", item_path, "entity does not allow the " .. effect .. " module effect")
+            end
+          end
+        end
+      end
+    end
+  end
+  if kinds > MAX_MODULE_KINDS then
+    add_issue(errors, "TOO_MANY_ITEM_REQUESTS", items_path, "at most 8 distinct module prototypes may be requested per entity")
+  end
+  local slots = prototype.module_inventory_size or 0
+  if slots < 1 or not MODULE_INVENTORY[prototype.type] then
+    add_issue(errors, "ENTITY_ACCEPTS_NO_MODULES", items_path, "entity prototype has no module slots this blueprint format can fill")
+  elseif total > slots then
+    add_issue(errors, "TOO_MANY_MODULES", items_path, "requested modules exceed the module slots of this entity")
+  end
+end
+
+local function validate_filters(entity, prototype, errors, path)
+  local kind = FILTER_KIND[prototype.type]
+  if entity.filters ~= nil then
+    local filters_path = path .. ".filters"
+    if not kind then
+      add_issue(errors, "FILTERS_NOT_SUPPORTED", filters_path, "this entity prototype does not accept blueprint item filters")
+    elseif type(entity.filters) ~= "table" or #entity.filters < 1 then
+      add_issue(errors, "INVALID_FILTERS", filters_path, "filters must be a non-empty array of item references")
+    else
+      local maximum = MAX_FILTERS
+      if kind == "single" then
+        maximum = 1
+      elseif type(prototype.filter_count) == "number" and prototype.filter_count > 0 then
+        maximum = math.min(MAX_FILTERS, prototype.filter_count)
+      end
+      if #entity.filters > maximum then
+        add_issue(errors, "TOO_MANY_FILTERS", filters_path, "entity accepts at most " .. maximum .. " filter slots")
+      end
+      for index, filter in ipairs(entity.filters) do
+        local filter_path = filters_path .. "[" .. index .. "]"
+        if type(filter) ~= "table" or not valid_string(filter.name, 200) then
+          add_issue(errors, "INVALID_FILTER", filter_path, "each filter must name an item prototype")
+        elseif not prototypes.item[filter.name] then
+          add_issue(errors, "UNKNOWN_ITEM", filter_path .. ".name", "item prototype does not exist")
+        else
+          validate_quality(filter.quality, errors, filter_path .. ".quality")
+        end
+      end
+    end
+  end
+  if entity.filterMode ~= nil then
+    local modes = FILTER_MODES[prototype.type]
+    if not modes or not modes[entity.filterMode] then
+      add_issue(errors, "INVALID_FILTER_MODE", path .. ".filterMode", "this entity prototype does not accept this filter mode")
+    end
+  end
+  for _, key in ipairs({"inputPriority", "outputPriority"}) do
+    if entity[key] ~= nil then
+      if not SPLITTER_TYPES[prototype.type] then
+        add_issue(errors, "PRIORITY_NOT_SUPPORTED", path .. "." .. key, "only splitters accept lane priorities")
+      elseif not SPLITTER_PRIORITIES[entity[key]] then
+        add_issue(errors, "INVALID_PRIORITY", path .. "." .. key, "priority must be left, right, or none")
+      end
+    end
+  end
+end
+
+local function validate_request_filters(entity, prototype, errors, path)
+  if entity.requestFromBuffers ~= nil and entity.requestFilters == nil then
+    add_issue(errors, "REQUEST_FILTERS_REQUIRED", path .. ".requestFromBuffers", "requestFromBuffers requires requestFilters")
+  end
+  if entity.requestFilters == nil then return end
+  local filters_path = path .. ".requestFilters"
+  if not REQUEST_FILTER_TYPES[prototype.type] then
+    add_issue(errors, "REQUEST_FILTERS_NOT_SUPPORTED", filters_path, "this entity prototype does not accept logistic request filters")
+    return
+  end
+  if prototype.type == "logistic-container"
+    and not REQUESTING_LOGISTIC_MODES[prototype.logistic_mode] then
+    add_issue(errors, "REQUEST_FILTERS_NOT_SUPPORTED", filters_path, "only requester and buffer chests accept logistic request filters")
+    return
+  end
+  validate_boolean(entity.requestFromBuffers, errors, path .. ".requestFromBuffers")
+  if type(entity.requestFilters) ~= "table" or #entity.requestFilters < 1 then
+    add_issue(errors, "INVALID_REQUEST_FILTERS", filters_path, "requestFilters must be a non-empty array")
+    return
+  end
+  if #entity.requestFilters > MAX_REQUEST_FILTERS then
+    add_issue(errors, "TOO_MANY_REQUEST_FILTERS", filters_path, "at most 40 logistic request filters are accepted per entity")
+    return
+  end
+  for index, filter in ipairs(entity.requestFilters) do
+    local filter_path = filters_path .. "[" .. index .. "]"
+    if type(filter) ~= "table" or not valid_string(filter.name, 200) then
+      add_issue(errors, "INVALID_REQUEST_FILTER", filter_path, "each request filter must name an item prototype")
+    elseif not prototypes.item[filter.name] then
+      add_issue(errors, "UNKNOWN_ITEM", filter_path .. ".name", "item prototype does not exist")
+    else
+      validate_quality(filter.quality, errors, filter_path .. ".quality")
+      if filter.min ~= nil and not integer(filter.min, 0, INT32_MAX) then
+        add_issue(errors, "INVALID_REQUEST_COUNT", filter_path .. ".min", "min must be a non-negative 32-bit integer")
+      end
+      if filter.max ~= nil then
+        if not integer(filter.max, 0, INT32_MAX) then
+          add_issue(errors, "INVALID_REQUEST_COUNT", filter_path .. ".max", "max must be a non-negative 32-bit integer")
+        elseif filter.min ~= nil and integer(filter.min, 0, INT32_MAX) and filter.max < filter.min then
+          add_issue(errors, "INVALID_REQUEST_COUNT", filter_path .. ".max", "max must be at least min")
+        end
+      end
+    end
+  end
+end
+
+local function validate_arithmetic(parameters, errors, path)
+  if type(parameters) ~= "table" then
+    add_issue(errors, "INVALID_ARITHMETIC", path, "arithmetic must be an object")
+    return
+  end
+  if parameters.operation ~= nil and not OPERATIONS[parameters.operation] then
+    add_issue(errors, "INVALID_OPERATION", path .. ".operation", "operation must be one of *, /, +, -, %, ^, <<, >>, AND, OR, XOR")
+  end
+  for _, key in ipairs({"firstConstant", "secondConstant"}) do
+    if parameters[key] ~= nil and not integer(parameters[key], INT32_MIN, INT32_MAX) then
+      add_issue(errors, "INVALID_CONSTANT", path .. "." .. key, "constant must be a 32-bit signed integer")
+    end
+  end
+  validate_signal(parameters.firstSignal, errors, path .. ".firstSignal")
+  validate_signal(parameters.secondSignal, errors, path .. ".secondSignal")
+  if parameters.outputSignal == nil then
+    add_issue(errors, "MISSING_OUTPUT_SIGNAL", path .. ".outputSignal", "an arithmetic combinator needs an output signal")
+  else
+    validate_signal(parameters.outputSignal, errors, path .. ".outputSignal")
+  end
+end
+
+local function validate_decider(parameters, errors, path)
+  if type(parameters) ~= "table" then
+    add_issue(errors, "INVALID_DECIDER", path, "decider must be an object")
+    return
+  end
+  local conditions = parameters.conditions
+  if type(conditions) ~= "table" or #conditions < 1 or #conditions > MAX_DECIDER_CONDITIONS then
+    add_issue(errors, "INVALID_DECIDER_CONDITIONS", path .. ".conditions", "a decider combinator needs 1 to 16 conditions")
+  else
+    for index, condition in ipairs(conditions) do
+      local condition_path = path .. ".conditions[" .. index .. "]"
+      validate_condition(condition, errors, condition_path)
+      if type(condition) == "table" and condition.compareType ~= nil
+        and not COMPARE_TYPES[condition.compareType] then
+        add_issue(errors, "INVALID_COMPARE_TYPE", condition_path .. ".compareType", "compareType must be and or or")
+      end
+    end
+  end
+  local outputs = parameters.outputs
+  if type(outputs) ~= "table" or #outputs < 1 or #outputs > MAX_DECIDER_OUTPUTS then
+    add_issue(errors, "INVALID_DECIDER_OUTPUTS", path .. ".outputs", "a decider combinator needs 1 to 16 outputs")
+  else
+    for index, output in ipairs(outputs) do
+      local output_path = path .. ".outputs[" .. index .. "]"
+      if type(output) ~= "table" or output.signal == nil then
+        add_issue(errors, "INVALID_DECIDER_OUTPUT", output_path, "each decider output needs a signal")
+      else
+        validate_signal(output.signal, errors, output_path .. ".signal")
+        validate_boolean(output.copyCountFromInput, errors, output_path .. ".copyCountFromInput")
+        if output.constant ~= nil and not integer(output.constant, INT32_MIN, INT32_MAX) then
+          add_issue(errors, "INVALID_CONSTANT", output_path .. ".constant", "constant must be a 32-bit signed integer")
+        end
+      end
+    end
+  end
+end
+
+local function validate_sections(sections, errors, path)
+  if type(sections) ~= "table" or #sections < 1 or #sections > MAX_SECTIONS then
+    add_issue(errors, "INVALID_SECTIONS", path, "sections must contain 1 to 8 entries")
+    return
+  end
+  for index, section in ipairs(sections) do
+    local section_path = path .. "[" .. index .. "]"
+    if type(section) ~= "table" then
+      add_issue(errors, "INVALID_SECTION", section_path, "section must be an object")
+    else
+      validate_boolean(section.active, errors, section_path .. ".active")
+      local filters = section.filters
+      if type(filters) ~= "table" or #filters < 1 or #filters > MAX_SECTION_FILTERS then
+        add_issue(errors, "INVALID_SECTION_FILTERS", section_path .. ".filters", "each section needs 1 to 40 signal filters")
+      else
+        for filter_index, filter in ipairs(filters) do
+          local filter_path = section_path .. ".filters[" .. filter_index .. "]"
+          validate_signal(filter, errors, filter_path)
+          if type(filter) == "table" and filter.count ~= nil
+            and not integer(filter.count, INT32_MIN, INT32_MAX) then
+            add_issue(errors, "INVALID_CONSTANT", filter_path .. ".count", "count must be a 32-bit signed integer")
+          end
+        end
+      end
+    end
+  end
+end
+
+local function validate_control(entity, prototype, errors, path)
+  if entity.control == nil then return end
+  local control_path = path .. ".control"
+  if type(entity.control) ~= "table" then
+    add_issue(errors, "INVALID_CONTROL", control_path, "control must be an object")
+    return
+  end
+  local kind = CONTROL_KIND[prototype.type]
+  if not kind then
+    add_issue(errors, "CONTROL_NOT_SUPPORTED", control_path, "this entity prototype has no control behavior this blueprint format can express")
+    return
+  end
+  local allowed = CONTROL_FIELDS[kind]
+  for _, key in ipairs(CONTROL_SHAPE.scalars) do
+    if entity.control[key] ~= nil and not allowed[key] then
+      add_issue(errors, "CONTROL_FIELD_NOT_SUPPORTED", control_path .. "." .. key, "this entity prototype does not support this control field")
+    end
+  end
+  for key in pairs(CONTROL_SHAPE.objects) do
+    if entity.control[key] ~= nil and not allowed[key] then
+      add_issue(errors, "CONTROL_FIELD_NOT_SUPPORTED", control_path .. "." .. key, "this entity prototype does not support this control field")
+    end
+  end
+  if entity.control.sections ~= nil and not allowed.sections then
+    add_issue(errors, "CONTROL_FIELD_NOT_SUPPORTED", control_path .. ".sections", "this entity prototype does not support signal sections")
+  end
+
+  for _, key in ipairs({
+    "circuitEnabled", "connectToLogisticNetwork", "readContents", "readIngredients",
+    "readWorking", "setRecipe", "setFilters", "setStackSize", "setRequests"
+  }) do
+    if allowed[key] then validate_boolean(entity.control[key], errors, control_path .. "." .. key) end
+  end
+  if allowed.enabledCondition then
+    validate_condition(entity.control.enabledCondition, errors, control_path .. ".enabledCondition")
+  end
+  if allowed.logisticCondition then
+    validate_condition(entity.control.logisticCondition, errors, control_path .. ".logisticCondition")
+  end
+  if allowed.workingSignal then
+    validate_signal(entity.control.workingSignal, errors, control_path .. ".workingSignal")
+  end
+  if allowed.stackSizeSignal then
+    validate_signal(entity.control.stackSizeSignal, errors, control_path .. ".stackSizeSignal")
+  end
+  if allowed.readMode and entity.control.readMode ~= nil
+    and not READ_MODES[kind][entity.control.readMode] then
+    add_issue(errors, "INVALID_READ_MODE", control_path .. ".readMode", "this entity prototype does not support this read mode")
+  end
+  if allowed.arithmetic and entity.control.arithmetic ~= nil then
+    validate_arithmetic(entity.control.arithmetic, errors, control_path .. ".arithmetic")
+  end
+  if allowed.decider and entity.control.decider ~= nil then
+    validate_decider(entity.control.decider, errors, control_path .. ".decider")
+  end
+  if allowed.sections and entity.control.sections ~= nil then
+    validate_sections(entity.control.sections, errors, control_path .. ".sections")
+  end
+end
+
 function Blueprints.validate(layout, context, placement)
   local errors = {}
   local warnings = {}
@@ -211,11 +846,11 @@ function Blueprints.validate(layout, context, placement)
     add_issue(errors, "INVALID_DESCRIPTION", "layout.description", "description may contain at most 1000 bytes")
   end
   if type(layout.entities) ~= "table" or #layout.entities < 1 or #layout.entities > MAX_ENTITIES then
-    add_issue(errors, "INVALID_ENTITY_COUNT", "layout.entities", "layout must contain 1 to 512 entities")
+    add_issue(errors, "INVALID_ENTITY_COUNT", "layout.entities", "layout must contain 1 to " .. MAX_ENTITIES .. " entities")
     return {valid = false, errors = errors, warnings = warnings, summary = summary}
   end
   if layout.tiles ~= nil and (type(layout.tiles) ~= "table" or #layout.tiles > MAX_TILES) then
-    add_issue(errors, "INVALID_TILE_COUNT", "layout.tiles", "layout may contain at most 2048 tiles")
+    add_issue(errors, "INVALID_TILE_COUNT", "layout.tiles", "layout may contain at most " .. MAX_TILES .. " tiles")
   end
 
   local known_numbers = {}
@@ -255,15 +890,16 @@ function Blueprints.validate(layout, context, placement)
       if entity.quality ~= nil and not prototypes.quality[entity.quality] then
         add_issue(errors, "UNKNOWN_QUALITY", path .. ".quality", "quality prototype does not exist")
       end
-      if is_nonempty_table(entity.items) then
-        add_issue(errors, "ITEM_REQUESTS_UNSUPPORTED", path .. ".items", "item insert plans are not accepted by the v1 safe blueprint subset")
-      end
       if is_nonempty_table(entity.settings) then
-        add_issue(errors, "ENTITY_SETTINGS_UNSUPPORTED", path .. ".settings", "arbitrary entity settings are not accepted by the v1 safe blueprint subset")
+        add_issue(errors, "ENTITY_SETTINGS_UNSUPPORTED", path .. ".settings", "arbitrary entity settings are not accepted; use control, filters, requestFilters, or items")
       end
       if prototype then
         item_cost_for(prototype, build_cost)
         validate_recipe(entity, prototype, context.force, errors, path)
+        validate_items(entity, prototype, build_cost, errors, path)
+        validate_filters(entity, prototype, errors, path)
+        validate_request_filters(entity, prototype, errors, path)
+        validate_control(entity, prototype, errors, path)
       end
       validate_connections(entity, known_numbers, errors, path)
 
@@ -336,6 +972,23 @@ function Blueprints.validate(layout, context, placement)
   if summary.tileCount > 0 and placement then
     add_issue(warnings, "TILE_COLLISIONS_NOT_SIMULATED", "layout.tiles", "entity placement was checked; tile replacement is validated by prototype only")
   end
+
+  -- Count bounds alone cannot keep a request inside the 48 KiB gateway
+  -- datagram once entities carry modules, filters and control behavior, so the
+  -- encoded canonical layout is the authoritative size gate.
+  if #errors == 0 then
+    local encoded_ok, encoded = pcall(function()
+      return helpers.table_to_json(canonical_layout(layout))
+    end)
+    if not encoded_ok or type(encoded) ~= "string" then
+      add_issue(errors, "INVALID_LAYOUT", "layout", "layout could not be encoded")
+    else
+      summary.layoutBytes = #encoded
+      if #encoded > MAX_LAYOUT_BYTES then
+        add_issue(errors, "LAYOUT_TOO_LARGE", "layout", "the canonical layout encodes to " .. #encoded .. " bytes; the gateway datagram allows " .. MAX_LAYOUT_BYTES)
+      end
+    end
+  end
   return {valid = #errors == 0, errors = errors, warnings = warnings, summary = summary}
 end
 
@@ -344,6 +997,242 @@ local DEFAULT_CONNECTOR = {
   green = function() return defines.wire_connector_id.circuit_green end,
   copper = function() return defines.wire_connector_id.pole_copper end
 }
+
+local function signal_id(signal)
+  if type(signal) ~= "table" then return nil end
+  return {type = signal.type, name = signal.name, quality = signal.quality}
+end
+
+local function circuit_condition(condition)
+  if type(condition) ~= "table" then return nil end
+  return {
+    first_signal = signal_id(condition.firstSignal),
+    second_signal = signal_id(condition.secondSignal),
+    comparator = condition.comparator,
+    constant = condition.constant
+  }
+end
+
+-- Module requests are laid out over consecutive module slots in a deterministic
+-- prototype-name order, because the resulting blueprint item is game state that
+-- every peer must build identically.
+local function insert_plans(source, prototype_type)
+  local inventory = defines.inventory[MODULE_INVENTORY[prototype_type] or ""]
+  if not inventory then return nil end
+  local names = {}
+  for name in pairs(source.items) do names[#names + 1] = name end
+  table.sort(names)
+  local plans = {}
+  local stack = 0
+  for _, name in ipairs(names) do
+    local positions = {}
+    for _ = 1, source.items[name] do
+      positions[#positions + 1] = {inventory = inventory, stack = stack}
+      stack = stack + 1
+    end
+    plans[#plans + 1] = {id = {name = name}, items = {in_inventory = positions}}
+  end
+  return plans
+end
+
+local function item_filters(source)
+  local filters = {}
+  for index, filter in ipairs(source.filters) do
+    filters[#filters + 1] = {
+      index = index,
+      name = filter.name,
+      quality = filter.quality,
+      comparator = filter.quality ~= nil and "=" or nil
+    }
+  end
+  return filters
+end
+
+local function slot_filters(source)
+  local filters = {}
+  for index, filter in ipairs(source.filters) do
+    filters[#filters + 1] = {index = index, name = filter.name}
+  end
+  return filters
+end
+
+local function single_filter(filter)
+  if filter.quality == nil then return filter.name end
+  return {name = filter.name, quality = filter.quality, comparator = "="}
+end
+
+local function request_sections(source)
+  local filters = {}
+  for index, filter in ipairs(source.requestFilters) do
+    filters[#filters + 1] = {
+      index = index,
+      name = filter.name,
+      quality = filter.quality or "normal",
+      comparator = "=",
+      count = filter.min or 0,
+      max_count = filter.max
+    }
+  end
+  return {
+    request_from_buffers = source.requestFromBuffers,
+    sections = {{index = 1, filters = filters}}
+  }
+end
+
+local function logistic_sections(sections)
+  local emitted = {}
+  for index, section in ipairs(sections) do
+    local filters = {}
+    for filter_index, filter in ipairs(section.filters or {}) do
+      filters[#filters + 1] = {
+        index = filter_index,
+        type = filter.type,
+        name = filter.name,
+        quality = filter.quality or "normal",
+        comparator = "=",
+        count = filter.count or 0
+      }
+    end
+    emitted[#emitted + 1] = {index = index, filters = filters, active = section.active}
+  end
+  return {sections = emitted}
+end
+
+local function apply_on_off(control, behavior)
+  if control.enabledCondition ~= nil then
+    behavior.circuit_condition = circuit_condition(control.enabledCondition)
+    behavior.circuit_enabled = control.circuitEnabled ~= false
+  elseif control.circuitEnabled ~= nil then
+    behavior.circuit_enabled = control.circuitEnabled
+  end
+  if control.logisticCondition ~= nil then
+    behavior.logistic_condition = circuit_condition(control.logisticCondition)
+    behavior.connect_to_logistic_network = control.connectToLogisticNetwork ~= false
+  elseif control.connectToLogisticNetwork ~= nil then
+    behavior.connect_to_logistic_network = control.connectToLogisticNetwork
+  end
+  return behavior
+end
+
+local function control_behavior(kind, control)
+  if kind == "arithmetic" then
+    local parameters = control.arithmetic
+    if type(parameters) ~= "table" then return nil end
+    return {
+      arithmetic_conditions = {
+        first_signal = signal_id(parameters.firstSignal),
+        second_signal = signal_id(parameters.secondSignal),
+        first_constant = parameters.firstConstant,
+        second_constant = parameters.secondConstant,
+        operation = parameters.operation or "*",
+        output_signal = signal_id(parameters.outputSignal)
+      }
+    }
+  end
+  if kind == "decider" then
+    local parameters = control.decider
+    if type(parameters) ~= "table" then return nil end
+    local conditions = {}
+    for _, condition in ipairs(parameters.conditions or {}) do
+      local emitted = circuit_condition(condition)
+      emitted.compare_type = condition.compareType
+      conditions[#conditions + 1] = emitted
+    end
+    local outputs = {}
+    for _, output in ipairs(parameters.outputs or {}) do
+      outputs[#outputs + 1] = {
+        signal = signal_id(output.signal),
+        copy_count_from_input = output.copyCountFromInput,
+        constant = output.constant
+      }
+    end
+    return {
+      decider_conditions = {conditions = conditions, outputs = outputs, else_outputs = {}}
+    }
+  end
+  if kind == "constant" then
+    if type(control.sections) ~= "table" then return nil end
+    return {sections = logistic_sections(control.sections)}
+  end
+  if kind == "logistic-container" then
+    local behavior = {}
+    if control.enabledCondition ~= nil then
+      behavior.circuit_condition = circuit_condition(control.enabledCondition)
+      behavior.circuit_condition_enabled = control.circuitEnabled ~= false
+    elseif control.circuitEnabled ~= nil then
+      behavior.circuit_condition_enabled = control.circuitEnabled
+    end
+    behavior.read_contents = control.readContents
+    behavior.set_requests = control.setRequests
+    if next(behavior) == nil then return nil end
+    return behavior
+  end
+
+  local behavior = apply_on_off(control, {})
+  if kind == "inserter" then
+    behavior.circuit_read_hand_contents = control.readContents
+    if control.readMode ~= nil then
+      behavior.circuit_hand_read_mode =
+        defines.control_behavior.inserter.hand_read_mode[READ_MODES.inserter[control.readMode]]
+    end
+    behavior.circuit_set_filters = control.setFilters
+    behavior.circuit_set_stack_size = control.setStackSize
+    behavior.stack_control_input_signal = signal_id(control.stackSizeSignal)
+  elseif kind == "belt" then
+    behavior.circuit_read_hand_contents = control.readContents == true
+    behavior.circuit_contents_read_mode =
+      defines.control_behavior.transport_belt.content_read_mode[READ_MODES.belt[control.readMode or "pulse"]]
+  elseif kind == "drill" then
+    behavior.circuit_read_resources = control.readContents == true
+    behavior.circuit_resource_read_mode =
+      defines.control_behavior.mining_drill.resource_read_mode[READ_MODES.drill[control.readMode or "this-miner"]]
+  elseif kind == "crafter" or kind == "furnace" then
+    behavior.read_contents = control.readContents
+    behavior.read_ingredients = control.readIngredients
+    behavior.read_working = control.readWorking
+    behavior.working_signal = signal_id(control.workingSignal)
+    if kind == "crafter" then behavior.set_recipe = control.setRecipe end
+  end
+  if next(behavior) == nil then return nil end
+  return behavior
+end
+
+local function apply_extras(entity, source)
+  local prototype = prototypes.entity[source.prototype]
+  local prototype_type = prototype and prototype.type or nil
+  if not prototype_type then return end
+
+  if type(source.items) == "table" and next(source.items) ~= nil then
+    entity.items = insert_plans(source, prototype_type)
+  end
+
+  local filter_kind = FILTER_KIND[prototype_type]
+  local has_filters = type(source.filters) == "table" and #source.filters > 0
+  if filter_kind == "single" and has_filters then
+    entity.filter = single_filter(source.filters[1])
+  elseif filter_kind == "drill" and has_filters then
+    entity.filter = {filters = slot_filters(source), mode = source.filterMode}
+  elseif filter_kind == "slots" then
+    if has_filters then
+      entity.filters = item_filters(source)
+      if prototype_type == "inserter" then entity.use_filters = true end
+    end
+    if source.filterMode ~= nil then entity.filter_mode = source.filterMode end
+  end
+  if source.inputPriority ~= nil then entity.input_priority = source.inputPriority end
+  if source.outputPriority ~= nil then entity.output_priority = source.outputPriority end
+
+  if type(source.requestFilters) == "table" and #source.requestFilters > 0 then
+    entity.request_filters = request_sections(source)
+  end
+
+  if type(source.control) == "table" then
+    local kind = CONTROL_KIND[prototype_type]
+    if kind then
+      entity.control_behavior = control_behavior(kind, source.control)
+    end
+  end
+end
 
 local function blueprint_entities(layout)
   local entities = {}
@@ -359,6 +1248,7 @@ local function blueprint_entities(layout)
       entity.recipe = source.recipe
       if source.quality ~= nil then entity.recipe_quality = source.quality end
     end
+    apply_extras(entity, source)
     if type(source.connections) == "table" and #source.connections > 0 then
       entity.wires = {}
       for _, connection in ipairs(source.connections) do
@@ -397,12 +1287,14 @@ local function deliver_to_clipboard(player, layout)
   local ok, reason = pcall(function()
     local stack = inventory[1]
     stack.set_stack({name = "blueprint", count = 1})
-    stack.label = layout.name
-    stack.blueprint_description = layout.description or ""
+    -- Contents first: Factorio refuses a label or description on an empty
+    -- blueprint, which silently broke every described cursor delivery.
     stack.set_blueprint_entities(blueprint_entities(layout))
     if #(layout.tiles or {}) > 0 then
       stack.set_blueprint_tiles(blueprint_tiles(layout))
     end
+    stack.label = layout.name
+    stack.blueprint_description = layout.description or ""
     player.add_to_clipboard(stack)
   end)
   inventory.destroy()
@@ -425,7 +1317,7 @@ local function canonical_record(id, source)
     if not canonical_ok or not valid_string(canonical.name, 100)
       or type(canonical.entities) ~= "table"
       or #canonical.entities < 1
-      or #canonical.entities > MAX_ENTITIES then return nil end
+      or #canonical.entities > MAX_STORED_ENTITIES then return nil end
     local encoded_ok, encoded = pcall(helpers.table_to_json, canonical)
     if not encoded_ok or type(encoded) ~= "string" then return nil end
     bytes = bytes + #encoded

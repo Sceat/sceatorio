@@ -79,7 +79,11 @@ class AiPerformanceStaticTests(unittest.TestCase):
     def test_blueprint_inbox_is_canonicalized_and_byte_bounded(self):
         blueprints = (ROOT / "src/game/aiBlueprints.lua").read_text(encoding="utf-8")
         self.assertIn("local MAX_BLUEPRINT_BYTES_PER_PLAYER = 512 * 1024", blueprints)
-        self.assertIn("local BLUEPRINT_INBOX_SCHEMA_VERSION = 2", blueprints)
+        self.assertIn("local BLUEPRINT_INBOX_SCHEMA_VERSION = 3", blueprints)
+        # Migration must never delete a record that was legal when it was saved,
+        # so the persistence ceiling stays above the tightened authoring bound.
+        self.assertIn("local MAX_STORED_ENTITIES = 512", blueprints)
+        self.assertIn("#canonical.entities > MAX_STORED_ENTITIES", blueprints)
         self.assertIn("local function canonical_layout", blueprints)
         self.assertIn("local function migrate_inbox", blueprints)
         self.assertIn("local function evict_oldest_until_fit", blueprints)

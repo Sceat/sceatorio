@@ -264,6 +264,121 @@ class AiGatewayStaticTests(unittest.TestCase):
         self.assertNotIn("build_blueprint", blueprints)
         self.assertNotIn("create_entity", blueprints)
 
+    def test_blueprint_extensions_are_validated_against_real_prototypes(self):
+        blueprints = (ROOT / "src/game/aiBlueprints.lua").read_text(encoding="utf-8")
+        validate = blueprints[
+            blueprints.index("function Blueprints.validate") :
+            blueprints.index("local function signal_id")
+        ]
+        # The v1 blanket rejections are gone; every widened field is validated.
+        self.assertNotIn("ITEM_REQUESTS_UNSUPPORTED", blueprints)
+        for call in (
+            "validate_items(entity, prototype, build_cost, errors, path)",
+            "validate_filters(entity, prototype, errors, path)",
+            "validate_request_filters(entity, prototype, errors, path)",
+            "validate_control(entity, prototype, errors, path)",
+        ):
+            self.assertIn(call, validate)
+        # Arbitrary settings blobs stay rejected; `control` replaced them.
+        self.assertIn("ENTITY_SETTINGS_UNSUPPORTED", validate)
+
+        # Modules are checked against the target prototype, not just the item list.
+        for guard in (
+            'item.type ~= "module"',
+            "prototype.allowed_module_categories",
+            "prototype.allowed_effects",
+            "prototype.module_inventory_size",
+            '"MODULE_CATEGORY_NOT_ALLOWED"',
+            '"MODULE_EFFECT_NOT_ALLOWED"',
+            '"TOO_MANY_MODULES"',
+            '"ENTITY_ACCEPTS_NO_MODULES"',
+        ):
+            self.assertIn(guard, blueprints)
+
+        # Signals resolve against real prototypes, and operators are enumerated.
+        for guard in (
+            "prototypes.virtual_signal",
+            '"UNKNOWN_SIGNAL"',
+            '"INVALID_OPERATION"',
+            '"INVALID_COMPARATOR"',
+            '"INVALID_READ_MODE"',
+            '"CONTROL_FIELD_NOT_SUPPORTED"',
+        ):
+            self.assertIn(guard, blueprints)
+
+        # Lua 5.2 has no \u{} escape; Unicode comparators must be byte escapes.
+        self.assertNotIn("\\u{", blueprints.replace("no \\u{} escape", ""))
+
+    def test_canonical_layout_persists_only_the_declared_whitelist(self):
+        blueprints = (ROOT / "src/game/aiBlueprints.lua").read_text(encoding="utf-8")
+        canonical = blueprints[
+            blueprints.index("local function copy_shape") :
+            blueprints.index("local function position_of")
+        ]
+        # copy_shape walks only declared keys, so unknown JSON keys cannot reach
+        # the save file even though validation tolerates them.
+        for declared in ("shape.scalars", "shape.objects", "shape.arrays", "shape.counts"):
+            self.assertIn(declared, canonical)
+        self.assertNotIn("pairs(source)", canonical)
+        self.assertIn("copy_shape(source, ENTITY_EXTRA_SHAPE)", canonical)
+
+        # Every widened field is declared in the whitelist exactly once.
+        shapes = blueprints[
+            blueprints.index("local SIGNAL_SHAPE") :
+            blueprints.index("local function copy_shape")
+        ]
+        for field in (
+            '"filterMode"',
+            '"inputPriority"',
+            '"outputPriority"',
+            '"requestFromBuffers"',
+            "items = {max = MAX_MODULE_KINDS}",
+            "filters = {max = MAX_FILTERS",
+            "requestFilters = {",
+            "control = CONTROL_SHAPE",
+        ):
+            self.assertIn(field, shapes)
+        # Bounds live in the shape, so the copier cannot be made to walk forever.
+        for bound in ("max = MAX_SECTIONS", "max = MAX_DECIDER_CONDITIONS", "max = MAX_DECIDER_OUTPUTS"):
+            self.assertIn(bound, shapes)
+
+    def test_blueprint_caps_are_bounded_by_the_gateway_datagram(self):
+        blueprints = (ROOT / "src/game/aiBlueprints.lua").read_text(encoding="utf-8")
+        constants = (ROOT / "src/core/aiConstants.lua").read_text(encoding="utf-8")
+        self.assertIn("Constants.MAX_DATAGRAM_BYTES = 48 * 1024", constants)
+        # 512 entities / 2048 tiles needed ~172 KiB and could never be delivered.
+        self.assertIn("local MAX_ENTITIES = 400", blueprints)
+        self.assertIn("local MAX_TILES = 512", blueprints)
+        self.assertIn("local MAX_LAYOUT_BYTES = 44 * 1024", blueprints)
+        self.assertIn('"LAYOUT_TOO_LARGE"', blueprints)
+        self.assertIn("helpers.table_to_json(canonical_layout(layout))", blueprints)
+
+    def test_blueprint_emitter_stays_in_lockstep_with_the_persisted_layout(self):
+        blueprints = (ROOT / "src/game/aiBlueprints.lua").read_text(encoding="utf-8")
+        emitter = blueprints[
+            blueprints.index("local function apply_extras") :
+            blueprints.index("local function blueprint_tiles")
+        ]
+        # Every persisted extension has to reach the delivered blueprint item.
+        for emitted in (
+            "entity.items = insert_plans(source, prototype_type)",
+            "entity.filters = item_filters(source)",
+            "entity.filter = single_filter(source.filters[1])",
+            "entity.filter_mode = source.filterMode",
+            "entity.input_priority = source.inputPriority",
+            "entity.output_priority = source.outputPriority",
+            "entity.request_filters = request_sections(source)",
+            "entity.control_behavior = control_behavior(kind, source.control)",
+            "entity.use_filters = true",
+        ):
+            self.assertIn(emitted, emitter)
+        # Factorio 2.1 collapsed crafting machines onto crafter_modules.
+        self.assertIn('["assembling-machine"] = "crafter_modules"', blueprints)
+        self.assertIn("defines.inventory[MODULE_INVENTORY[prototype_type]", blueprints)
+        self.assertIn("in_inventory = positions", blueprints)
+        # Module placement must be deterministic for multiplayer save sync.
+        self.assertIn("table.sort(names)", blueprints)
+
     def test_map_annotations_are_chart_only_and_player_force_scoped(self):
         control = (ROOT / "src/game/aiControl.lua").read_text(encoding="utf-8")
         annotation = control[
