@@ -5,19 +5,14 @@ local Blueprints = require("src.game.aiBlueprints")
 local AiBlueprintGui = {}
 
 local BUTTON_NAME = "sceatorio_ai_blueprint_button"
-local FRAME_NAME = "sceatorio_ai_blueprint_frame"
--- The panel is a slot grid, not a list: six slots per row like the vanilla
--- blueprint book, two rows per page, so a full 100-blueprint inbox still builds
--- a constant number of elements per render.
-local SLOT_COLUMNS = 6
-local SLOTS_PER_PAGE = 12
-local SLOT_SIZE = 48
-local SLOT_LABEL_WIDTH = 88
-local FRAME_WIDTH = 640
--- Vanilla shows at most four icons per blueprint; a sprite-button carries one
--- sprite, so the leading prototype becomes the slot icon and the rest of the
--- ranking is spelled out in the tooltip.
-local MAX_ICONS = 4
+local ACTION_TOGGLE = "sceatorio_ai_blueprints_toggle"
+
+-- The window is Factorio's own inventory GUI, opened on a mod-owned inventory:
+-- the engine draws every slot, every blueprint preview, every tooltip and the
+-- whole drag-and-pick-up behaviour, so nothing here imitates a slot.
+-- aiBlueprints caps an inbox at 100 records; the inventory is resized down to
+-- the records actually stored, so this is only the ceiling.
+local MAX_SLOTS = 100
 local BUTTON_SIZE = 40
 local GAP = 8
 -- The player list owns the upper-left corner; these mirror its own geometry so
@@ -30,24 +25,12 @@ local PLAYER_PANEL_LEFT_OFFSET = 8
 -- status button that no longer exists.
 local PLAYER_PANEL_TOP_OFFSET = 8
 
-local ACTION_TOGGLE = "sceatorio_ai_blueprints_toggle"
-local ACTION_CLOSE = "sceatorio_ai_blueprints_close"
-local ACTION_PAGE = "sceatorio_ai_blueprints_page"
-local ACTION_LOAD = "sceatorio_ai_blueprints_load"
-
 -- The technology icon is not a declared sprite prototype, but the engine
 -- publishes prototype-backed sprite paths; the first path that the running
 -- Factorio accepts wins, so a missing graphic degrades instead of crashing.
 local BUTTON_SPRITES = {
   "technology/" .. AiConstants.TECHNOLOGY,
   "item/" .. AiConstants.UPLINK,
-  "utility/side_menu_blueprint_library_icon"
-}
-
--- Fallback for a slot whose entities resolve to no drawable prototype icon at
--- all: the panel still shows a blueprint-shaped slot instead of an empty one.
-local GENERIC_SPRITES = {
-  "item/blueprint",
   "utility/side_menu_blueprint_library_icon"
 }
 
@@ -85,9 +68,9 @@ local function available(player)
     and technology_researched(player.force)
 end
 
--- Every sprite this panel draws is prototype-derived, so nothing may reach an
--- element before the running Factorio confirms it: an unknown prototype must
--- degrade to the next candidate, never raise inside the click that drew it.
+-- The only sprite this module still draws is the toolbar button, and it is
+-- prototype-derived: an unknown prototype must degrade to the next candidate,
+-- never raise inside the tick that drew it.
 local function first_valid_sprite(paths)
   for _, path in ipairs(paths) do
     local ok, valid = pcall(helpers.is_valid_sprite_path, path)
@@ -98,20 +81,6 @@ end
 
 local function button_sprite()
   return first_valid_sprite(BUTTON_SPRITES)
-end
-
--- A style NAME the running Factorio does not define raises inside add(), which
--- is the same crash class that bricked 2.1.0 through a style read. Retrying
--- without the style keeps the panel alive on an engine that renamed one.
-local function add(parent, spec)
-  if spec.style == nil then return parent.add(spec) end
-  local ok, element = pcall(function() return parent.add(spec) end)
-  if ok and element then return element end
-  local plain = {}
-  for key, value in pairs(spec) do
-    if key ~= "style" then plain[key] = value end
-  end
-  return parent.add(plain)
 end
 
 -- Read-only view of the same storage Blueprints owns. The GUI never creates or
@@ -135,9 +104,186 @@ local function inbox_records(player_index)
   return records
 end
 
-local function destroy_frame(player)
-  local frame = player.gui.screen[FRAME_NAME]
-  if frame and frame.valid then frame.destroy() end
+-- Script inventories survive save/load, so their handles live in the same state
+-- root as everything else this mod owns: one inventory per player, created on
+-- first open and destroyed when the player is removed.
+local function inventories()
+  local root = State.get()
+  if type(root) ~= "table" then return nil end
+  root.ai_blueprint_inventories = root.ai_blueprint_inventories or {}
+  return root.ai_blueprint_inventories
+end
+
+local function stored_inventory(player_index)
+  local store = inventories()
+  local inventory = store and store[player_index] or nil
+  if inventory ~= nil and inventory.valid then return inventory end
+  if store then store[player_index] = nil end
+  return nil
+end
+
+local function ensure_inventory(player)
+  local store = inventories()
+  if not store then return nil end
+  local existing = stored_inventory(player.index)
+  if existing then return existing end
+  -- gui_title is what Factorio prints on the window it draws for this
+  -- inventory, so the engine window carries our name without a custom frame.
+  -- An engine that rejects the title still gets a working window.
+  local created
+  local ok = pcall(function()
+    created = game.create_inventory(MAX_SLOTS, {"gui.sceatorio-ai-blueprints-title"})
+  end)
+  if not ok or created == nil or not created.valid then
+    created = nil
+    ok = pcall(function() created = game.create_inventory(MAX_SLOTS) end)
+    if not ok or created == nil or not created.valid then return nil end
+  end
+  store[player.index] = created
+  return created
+end
+
+local function stack_label(stack)
+  local ok, label = pcall(function() return stack.label end)
+  if ok and type(label) == "string" then return label end
+  return nil
+end
+
+local function owned_names(records)
+  local names = {}
+  for _, record in ipairs(records) do
+    if type(record.name) == "string" then names[record.name] = true end
+  end
+  return names
+end
+
+local function spill(player, stack)
+  pcall(function()
+    player.surface.spill_item_stack({
+      position = player.position,
+      stack = stack,
+      enable_looted = false,
+      force = player.force,
+      allow_belts = false
+    })
+  end)
+end
+
+-- Everything the player's own inventory refuses lands at their feet instead of
+-- in the next wipe. A whole stack is spilled as the live item so a blueprint
+-- keeps its contents; only a partially accepted stack falls back to a plain
+-- remainder, which by definition holds no per-item data.
+local function give_back(player, stack)
+  local count = stack.count
+  local moved = 0
+  pcall(function() moved = player.insert(stack) end)
+  if moved >= count then return end
+  if moved <= 0 then
+    spill(player, stack)
+    return
+  end
+  local remainder = count - moved
+  local quality
+  pcall(function() quality = stack.quality end)
+  spill(player, {name = stack.name, count = remainder, quality = quality})
+end
+
+-- Anything the player drops into this window is theirs, so it goes straight
+-- back to them instead of being destroyed by the next rebuild. The blueprints
+-- this module put there are the one exception: they are copies of records still
+-- sitting in the inbox, and the next open rebuilds them for free.
+local function reclaim(player, inventory, owned)
+  local returned = 0
+  for slot = 1, #inventory do
+    local stack = inventory[slot]
+    if stack.valid_for_read then
+      local label = stack.name == "blueprint" and stack_label(stack) or nil
+      if not (label and owned[label]) then
+        give_back(player, stack)
+        returned = returned + 1
+      end
+    end
+  end
+  if returned > 0 then
+    player.print({"gui.sceatorio-ai-blueprints-returned", returned})
+  end
+end
+
+-- aiBlueprints owns the only conversion from a stored layout into a real
+-- blueprint item -- temporary inventory, contents before label and description,
+-- every module, filter and control behavior. This module must never rebuild
+-- that, so it passes a delivery sink in place of the player: the finished stack
+-- is copied into our own slot instead of the clipboard queue. set_stack copies
+-- the item, so the temporary inventory aiBlueprints destroys right after is
+-- never aliased.
+local function slot_sink(player, stack)
+  return {
+    valid = true,
+    connected = player.connected,
+    add_to_clipboard = function(source)
+      stack.set_stack(source)
+    end
+  }
+end
+
+local function write_stack(player, stack, blueprint_id)
+  local ok, result, code, message = pcall(function()
+    return Blueprints.load(
+      {
+        player = slot_sink(player, stack),
+        player_index = player.index,
+        allow_cursor = true
+      },
+      blueprint_id,
+      nil,
+      "cursor"
+    )
+  end)
+  if ok and result then return true end
+  log("[Sceatorio] AI blueprint window could not rebuild "
+    .. tostring(blueprint_id) .. ": " .. tostring(message or code or result))
+  return false
+end
+
+-- Rebuilt on every open, so the window always shows the live inbox and never
+-- becomes storage of its own. Bounded twice: by the caller's own inbox and by
+-- MAX_SLOTS.
+local function fill(player, inventory)
+  local records = inbox_records(player.index)
+  reclaim(player, inventory, owned_names(records))
+  inventory.clear()
+  local count = math.max(1, math.min(#records, MAX_SLOTS))
+  pcall(function() inventory.resize(count) end)
+  local failures = 0
+  for index = 1, math.min(#records, count) do
+    if not write_stack(player, inventory[index], records[index].id) then
+      failures = failures + 1
+    end
+  end
+  if failures > 0 then
+    player.print({"gui.sceatorio-ai-blueprints-failed", failures})
+  end
+  return #records
+end
+
+local function is_open(player, inventory)
+  if player.opened_gui_type ~= defines.gui_type.script_inventory then return false end
+  return player.opened == inventory
+end
+
+-- Closing hands back whatever the player left and empties the window: every
+-- blueprint in it is a copy the next open rebuilds, so nothing is kept here
+-- between opens and the inbox stays the single source of truth.
+local function release(player, inventory)
+  reclaim(player, inventory, owned_names(inbox_records(player.index)))
+  inventory.clear()
+end
+
+local function close_window(player)
+  local inventory = stored_inventory(player.index)
+  if not inventory then return end
+  if is_open(player, inventory) then player.opened = nil end
+  release(player, inventory)
 end
 
 local function position_button(player, button)
@@ -179,267 +325,12 @@ local function ensure_button(player)
   return button
 end
 
-local function text(value)
-  return type(value) == "string" and value or ""
-end
-
-local function number(value)
-  return type(value) == "number" and value or 0
-end
-
--- One pass over the stored layout yields everything a slot shows: the icon
--- ranking, the entity count and the tile footprint. The ranking is sorted by
--- count and then by prototype name, so the same record always draws the same
--- slot for every player.
-local function summarize(layout)
-  local counts = {}
-  local names = {}
-  local total = 0
-  local min_x, min_y, max_x, max_y
-  local entities = type(layout) == "table" and type(layout.entities) == "table"
-    and layout.entities or {}
-  for _, entity in ipairs(entities) do
-    local prototype = type(entity) == "table" and entity.prototype or nil
-    if type(prototype) == "string" then
-      total = total + 1
-      if counts[prototype] == nil then
-        counts[prototype] = 0
-        names[#names + 1] = prototype
-      end
-      counts[prototype] = counts[prototype] + 1
-      local position = entity.position
-      if type(position) == "table"
-        and type(position.x) == "number" and type(position.y) == "number" then
-        min_x = min_x and math.min(min_x, position.x) or position.x
-        min_y = min_y and math.min(min_y, position.y) or position.y
-        max_x = max_x and math.max(max_x, position.x) or position.x
-        max_y = max_y and math.max(max_y, position.y) or position.y
-      end
-    end
-  end
-  table.sort(names, function(left, right)
-    if counts[left] ~= counts[right] then return counts[left] > counts[right] end
-    return left < right
-  end)
-  -- Stored positions are entity centers, so the tile span is the rounded
-  -- distance between the outermost centers plus the entity they sit on.
-  return {
-    total = total,
-    names = names,
-    counts = counts,
-    width = min_x and (math.floor(max_x - min_x + 0.5) + 1) or 0,
-    height = min_y and (math.floor(max_y - min_y + 0.5) + 1) or 0
-  }
-end
-
-local function slot_sprite(summary)
-  for index = 1, math.min(#summary.names, MAX_ICONS) do
-    local name = summary.names[index]
-    local sprite = first_valid_sprite({"entity/" .. name, "item/" .. name})
-    if sprite then return sprite end
-  end
-  return first_valid_sprite(GENERIC_SPRITES)
-end
-
--- Prototype names are internal identifiers; the tooltip shows what the player
--- reads elsewhere in the game, and falls back to the raw name for a prototype
--- this save no longer defines.
-local function prototype_caption(name)
-  local prototype = prototypes.entity[name]
-  local localised = prototype and prototype.localised_name or nil
-  if localised ~= nil then return localised end
-  return name
-end
-
-local function contents_caption(summary)
-  local list = {""}
-  for index = 1, math.min(#summary.names, MAX_ICONS) do
-    local name = summary.names[index]
-    list[#list + 1] = {"", "\n", tostring(summary.counts[name]), " x ", prototype_caption(name)}
-  end
-  if #summary.names > MAX_ICONS then
-    list[#list + 1] = {
-      "gui.sceatorio-ai-blueprints-more-kinds",
-      #summary.names - MAX_ICONS
-    }
-  end
-  return list
-end
-
-local function add_slot(container, record)
-  local revisions = record.revisions
-  local latest = revisions[#revisions]
-  local summary = summarize(latest and latest.layout)
-  local cell = add(container, {type = "flow", direction = "vertical"})
-  local button = add(cell, {
-    type = "sprite-button",
-    style = "slot_button",
-    sprite = slot_sprite(summary),
-    number = summary.total > 0 and summary.total or nil,
-    tooltip = {
-      "gui.sceatorio-ai-blueprints-slot",
-      text(record.name),
-      number(latest and latest.revision),
-      summary.total,
-      summary.width,
-      summary.height,
-      number(record.created_tick),
-      number(record.updated_tick),
-      contents_caption(summary)
-    },
-    tags = {sceatorio_action = ACTION_LOAD, sceatorio_blueprint_id = record.id}
-  })
-  local label = add(cell, {type = "label", caption = text(record.name)})
-  style(cell, {horizontal_align = "center", padding = 2})
-  style(button, {width = SLOT_SIZE, height = SLOT_SIZE})
-  style(label, {
-    single_line = true,
-    maximal_width = SLOT_LABEL_WIDTH,
-    horizontal_align = "center"
-  })
-end
-
-local function render_frame(player, page, message)
-  destroy_frame(player)
-  local records = inbox_records(player.index)
-  local page_count = math.max(1, math.ceil(#records / SLOTS_PER_PAGE))
-  page = math.max(1, math.min(page or 1, page_count))
-
-  -- No frame caption: the title lives in the title bar row below, which is the
-  -- only layout that keeps the close button out of the text it used to overlap.
-  local frame = player.gui.screen.add({
-    type = "frame",
-    name = FRAME_NAME,
-    direction = "vertical",
-    tags = {sceatorio_page = page}
-  })
-  frame.auto_center = true
-  style(frame, {width = FRAME_WIDTH})
-
-  local title = add(frame, {type = "flow", direction = "horizontal"})
-  title.drag_target = frame
-  add(title, {
-    type = "label",
-    style = "frame_title",
-    caption = {"gui.sceatorio-ai-blueprints-title"}
-  })
-  local spacer = add(title, {type = "empty-widget", style = "draggable_space_header"})
-  spacer.drag_target = frame
-  add(title, {
-    type = "sprite-button",
-    sprite = "utility/close",
-    style = "frame_action_button",
-    tags = {sceatorio_action = ACTION_CLOSE}
-  })
-  style(title, {vertical_align = "center", horizontally_stretchable = true})
-  style(spacer, {horizontally_stretchable = true, height = 24, right_margin = 4})
-
-  local hint = add(frame, {type = "label", caption = {"gui.sceatorio-ai-blueprints-hint"}})
-  style(hint, {single_line = false, maximal_width = FRAME_WIDTH - 32})
-
-  if message then
-    local notice = add(frame, {type = "label", caption = message})
-    style(notice, {single_line = false, maximal_width = FRAME_WIDTH - 32})
-  end
-
-  if #records == 0 then
-    add(frame, {type = "label", caption = {"gui.sceatorio-ai-blueprints-empty"}})
-    return frame
-  end
-
-  local grid = add(frame, {
-    type = "table",
-    name = "slots",
-    column_count = SLOT_COLUMNS
-  })
-  style(grid, {horizontal_spacing = GAP, vertical_spacing = GAP})
-
-  -- Only one page of slots is ever built, so a full 100-record inbox still
-  -- renders a constant number of elements.
-  local first = (page - 1) * SLOTS_PER_PAGE + 1
-  local last = math.min(#records, first + SLOTS_PER_PAGE - 1)
-  for index = first, last do add_slot(grid, records[index]) end
-
-  local footer = add(frame, {type = "flow", direction = "horizontal"})
-  local previous = footer.add({
-    type = "button",
-    caption = "<",
-    tooltip = {"gui.sceatorio-ai-blueprints-previous-page"},
-    tags = {sceatorio_action = ACTION_PAGE, sceatorio_page_delta = -1}
-  })
-  local indicator = footer.add({
-    type = "label",
-    caption = {"gui.sceatorio-ai-blueprints-page", page, page_count}
-  })
-  local following = footer.add({
-    type = "button",
-    caption = ">",
-    tooltip = {"gui.sceatorio-ai-blueprints-next-page"},
-    tags = {sceatorio_action = ACTION_PAGE, sceatorio_page_delta = 1}
-  })
-  style(footer, {vertical_align = "center", horizontally_stretchable = true})
-  style(previous, {width = 28})
-  style(following, {width = 28})
-  previous.enabled = page > 1
-  following.enabled = page < page_count
-  previous.visible = page_count > 1
-  indicator.visible = page_count > 1
-  following.visible = page_count > 1
-  return frame
-end
-
--- aiBlueprints owns the only conversion from a stored layout into a real
--- blueprint item -- temporary inventory, contents before label and description,
--- every module, filter and control behavior. The panel must never rebuild that,
--- so it passes a delivery sink in place of the player: the finished stack lands
--- in the cursor instead of the clipboard queue. set_stack copies the item, so
--- the temporary inventory aiBlueprints destroys right after is never aliased.
-local function cursor_sink(player)
-  return {
-    valid = true,
-    connected = player.connected,
-    add_to_clipboard = function(stack)
-      player.cursor_stack.set_stack(stack)
-    end
-  }
-end
-
-local function deliver(player, blueprint_id)
-  if type(blueprint_id) ~= "string" then return {"gui.sceatorio-ai-blueprints-missing"} end
-  local cursor = player.cursor_stack
-  if not (cursor and cursor.valid) then
-    return {"gui.sceatorio-ai-blueprints-no-cursor"}
-  end
-  -- Whatever the cursor already holds belongs to the player; set_stack would
-  -- destroy it, so a busy cursor reports and delivers nothing at all.
-  if cursor.valid_for_read then
-    return {"gui.sceatorio-ai-blueprints-cursor-busy"}
-  end
-  local result, code, message = Blueprints.load(
-    {
-      player = cursor_sink(player),
-      player_index = player.index,
-      allow_cursor = true
-    },
-    blueprint_id,
-    nil,
-    "cursor"
-  )
-  if not result then
-    return {
-      "gui.sceatorio-ai-blueprints-failed",
-      message or code or "BLUEPRINT_NOT_FOUND"
-    }
-  end
-  return {"gui.sceatorio-ai-blueprints-delivered"}
-end
-
 function AiBlueprintGui.update(player)
   if not (player and player.valid) then return end
   if not available(player) then
     local button = player.gui.screen[BUTTON_NAME]
     if button and button.valid then button.destroy() end
-    destroy_frame(player)
+    close_window(player)
     return
   end
   position_button(player, ensure_button(player))
@@ -454,12 +345,19 @@ function AiBlueprintGui.toggle(player)
     AiBlueprintGui.update(player)
     return
   end
-  local frame = player.gui.screen[FRAME_NAME]
-  if frame and frame.valid then
-    frame.destroy()
+  local inventory = ensure_inventory(player)
+  if not inventory then return end
+  if is_open(player, inventory) then
+    player.opened = nil
     return
   end
-  render_frame(player, 1)
+  if fill(player, inventory) == 0 then
+    player.print({"gui.sceatorio-ai-blueprints-empty"})
+    return
+  end
+  -- The engine draws it from here: real item stacks, real blueprint previews,
+  -- real hover, drag and pick-up, exactly like the blueprint library.
+  player.opened = inventory
 end
 
 local function update_force(force)
@@ -479,6 +377,24 @@ function AiBlueprintGui.on_display_changed(event)
   AiBlueprintGui.update(game.get_player(event.player_index))
 end
 
+function AiBlueprintGui.on_player_removed(event)
+  local store = inventories()
+  if not store then return end
+  local inventory = store[event.player_index]
+  store[event.player_index] = nil
+  if inventory ~= nil and inventory.valid then inventory.destroy() end
+end
+
+function AiBlueprintGui.on_gui_closed(event)
+  if event.gui_type ~= defines.gui_type.script_inventory then return end
+  local player = game.get_player(event.player_index)
+  if not (player and player.valid) then return end
+  local inventory = stored_inventory(player.index)
+  if not inventory then return end
+  if event.inventory ~= nil and event.inventory ~= inventory then return end
+  release(player, inventory)
+end
+
 function AiBlueprintGui.on_research_finished(event)
   local research = event.research
   if not (research and research.valid) then return end
@@ -495,35 +411,9 @@ function AiBlueprintGui.on_gui_click(event)
   local element = event.element
   if not (element and element.valid) then return false end
   local tags = element.tags or {}
-  local action = tags.sceatorio_action
-  if action ~= ACTION_TOGGLE and action ~= ACTION_CLOSE
-    and action ~= ACTION_PAGE and action ~= ACTION_LOAD then return false end
-
+  if tags.sceatorio_action ~= ACTION_TOGGLE then return false end
   local player = game.get_player(event.player_index)
-  if not (player and player.valid) then return true end
-  if action == ACTION_TOGGLE then
-    AiBlueprintGui.toggle(player)
-    return true
-  end
-  if action == ACTION_CLOSE then
-    destroy_frame(player)
-    return true
-  end
-
-  local frame = player.gui.screen[FRAME_NAME]
-  local page = frame and frame.valid and frame.tags.sceatorio_page or 1
-  if type(page) ~= "number" then page = 1 end
-  if not available(player) then
-    destroy_frame(player)
-    AiBlueprintGui.update(player)
-    return true
-  end
-  if action == ACTION_PAGE then
-    local delta = tags.sceatorio_page_delta
-    render_frame(player, page + ((delta == -1 or delta == 1) and delta or 0))
-    return true
-  end
-  render_frame(player, page, deliver(player, tags.sceatorio_blueprint_id))
+  if player and player.valid then AiBlueprintGui.toggle(player) end
   return true
 end
 

@@ -139,6 +139,7 @@ if defines.events.on_player_removed then
     Teams.on_player_removed(event)
     PlayerList.on_player_removed(event)
     AiGateway.on_player_removed(event)
+    AiBlueprintGui.on_player_removed(event)
   end)
 end
 
@@ -266,7 +267,10 @@ if defines.events.on_udp_packet_received then
   script.on_event(defines.events.on_udp_packet_received, AiGateway.on_udp_packet_received)
 end
 script.on_event(defines.events.on_gui_opened, AiGateway.on_gui_opened)
-script.on_event(defines.events.on_gui_closed, AiGateway.on_gui_closed)
+script.on_event(defines.events.on_gui_closed, function(event)
+  AiGateway.on_gui_closed(event)
+  AiBlueprintGui.on_gui_closed(event)
+end)
 script.on_event(
   defines.events.on_selected_entity_changed,
   Security.on_selected_entity_changed

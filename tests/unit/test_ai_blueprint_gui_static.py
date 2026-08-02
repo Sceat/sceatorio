@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Contract for the in-game AI blueprint inbox GUI."""
+"""Contract for the in-game AI blueprint inbox window.
+
+The window is Factorio's own inventory GUI opened on a mod-owned inventory, not
+a hand-drawn slot grid: the engine renders the real blueprint stacks. These
+assertions pin that, plus the safety properties the panel had before it.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +20,16 @@ def source(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def block(text: str, signature: str) -> str:
+    match = re.search(
+        re.escape(signature) + r".*?\nend\n",
+        text,
+        re.S,
+    )
+    assert match is not None, signature
+    return match.group(0)
+
+
 class AiBlueprintGuiTests(unittest.TestCase):
     def test_module_exists_and_is_wired_into_control(self) -> None:
         control = source("control.lua")
@@ -28,8 +43,14 @@ class AiBlueprintGuiTests(unittest.TestCase):
             "on_research_finished",
             "on_setting_changed",
             "on_display_changed",
+            # The inventory has a lifecycle now: it must be released when its
+            # window closes and destroyed when its player is removed.
+            "on_gui_closed",
+            "on_player_removed",
         ):
             self.assertIn(f"AiBlueprintGui.{handler}(event)", control)
+        # Chaining onto on_gui_closed must not drop the gateway's own handler.
+        self.assertIn("AiGateway.on_gui_closed(event)", control)
         # The existing dispatch chain must stay intact.
         for existing in (
             "PlayerList.on_gui_click(event)",
@@ -40,88 +61,108 @@ class AiBlueprintGuiTests(unittest.TestCase):
         ):
             self.assertIn(existing, control)
 
-    def test_click_handler_dispatches_on_action_tags(self) -> None:
+    def test_click_handler_dispatches_on_the_single_toggle_tag(self) -> None:
         gui = source("src/game/aiBlueprintGui.lua")
         self.assertRegex(
             gui,
             re.compile(
                 r"function AiBlueprintGui\.on_gui_click\(event\).*?"
-                r"local action = tags\.sceatorio_action.*?return false",
+                r"tags\.sceatorio_action ~= ACTION_TOGGLE then return false",
                 re.S,
             ),
         )
         self.assertIn("tags = {sceatorio_action = ACTION_TOGGLE}", gui)
-        self.assertIn("sceatorio_action = ACTION_LOAD", gui)
-        self.assertIn("sceatorio_action = ACTION_PAGE", gui)
-        self.assertIn("sceatorio_action = ACTION_CLOSE", gui)
+        # The engine owns the window, so the mod owns exactly one element: the
+        # button. No load, page or close actions survive.
+        self.assertEqual(re.findall(r"local (ACTION_\w+) = ", gui), ["ACTION_TOGGLE"])
         # Gateway swallows every action prefixed "ai_"; ours must not collide.
         for match in re.findall(r'local ACTION_\w+ = "([^"]+)"', gui):
             self.assertFalse(match.startswith("ai_"), match)
 
-    def test_delivery_reuses_the_blueprint_module(self) -> None:
+    def test_window_is_the_engine_inventory_gui(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        # The one line that opens the window: Factorio renders the stacks.
+        self.assertIn("player.opened = inventory", gui)
+        toggle = block(gui, "function AiBlueprintGui.toggle(player)")
+        self.assertIn("ensure_inventory(player)", toggle)
+        self.assertIn("fill(player, inventory)", toggle)
+        self.assertLess(
+            toggle.index("fill(player, inventory)"),
+            toggle.index("player.opened = inventory"),
+        )
+        # A second click closes it again.
+        self.assertIn("player.opened = nil", toggle)
+        # Nothing hand-draws a slot any more: no custom frame, no pagination,
+        # no sprite-button grid, no per-record tooltip.
+        for gone in (
+            "render_frame",
+            "add_slot",
+            "SLOT_COLUMNS",
+            "SLOTS_PER_PAGE",
+            "FRAME_NAME",
+            "FRAME_WIDTH",
+            "slot_button",
+            "draggable_space_header",
+            "auto_center",
+        ):
+            self.assertNotIn(gone, gui)
+
+    def test_inventory_is_mod_owned_and_has_a_lifecycle(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        # Created through the script-inventory API, titled by our locale key.
+        self.assertIn(
+            'game.create_inventory(MAX_SLOTS, {"gui.sceatorio-ai-blueprints-title"})',
+            gui,
+        )
+        self.assertRegex(gui, r"local MAX_SLOTS = \d+")
+        # The handle is persisted so it survives save/load, keyed per player.
+        self.assertIn("store[player.index] = created", gui)
+        # A stale handle from an older save never reaches the engine.
+        stored = block(gui, "local function stored_inventory(player_index)")
+        self.assertIn("inventory.valid", stored)
+        # And it is destroyed when its player goes, so nothing leaks.
+        removed = block(gui, "function AiBlueprintGui.on_player_removed(event)")
+        self.assertIn("store[event.player_index] = nil", removed)
+        self.assertIn("inventory.destroy()", removed)
+        # Closing the window releases it instead of leaving stacks parked.
+        closed = block(gui, "function AiBlueprintGui.on_gui_closed(event)")
+        self.assertIn("defines.gui_type.script_inventory", closed)
+        self.assertIn("release(player, inventory)", closed)
+
+    def test_stacks_come_from_the_blueprint_module_seam(self) -> None:
         gui = source("src/game/aiBlueprintGui.lua")
         self.assertIn('require("src.game.aiBlueprints")', gui)
         self.assertRegex(
             gui,
             re.compile(
-                r"Blueprints\.load\(\s*\{.*?player_index = player\.index,.*?"
-                r"allow_cursor = true.*?\},\s*blueprint_id,\s*nil,\s*\"cursor\"",
+                r"Blueprints\.load\(\s*\{.*?player = slot_sink\(player, stack\),.*?"
+                r"player_index = player\.index,.*?allow_cursor = true.*?\},\s*"
+                r"blueprint_id,\s*nil,\s*\"cursor\"",
                 re.S,
             ),
         )
-        # The panel must never rebuild a blueprint item: aiBlueprints owns the
+        # The window must never rebuild a blueprint item: aiBlueprints owns the
         # only layout-to-stack conversion, modules and control behavior included.
-        self.assertNotIn("deliver_to_clipboard", gui)
-        self.assertNotIn("set_blueprint_entities", gui)
-        self.assertNotIn("set_blueprint_tiles", gui)
+        for owned in (
+            "deliver_to_clipboard",
+            "set_blueprint_entities",
+            "set_blueprint_tiles",
+            "blueprint_description",
+        ):
+            self.assertNotIn(owned, gui)
+        # The sink writes the finished stack into our own slot, not the cursor
+        # and not the clipboard queue.
+        sink = block(gui, "local function slot_sink(player, stack)")
+        self.assertIn("add_to_clipboard = function(source)", sink)
+        self.assertIn("stack.set_stack(source)", sink)
 
-    def test_delivery_lands_in_the_cursor_and_spares_a_busy_one(self) -> None:
-        gui = source("src/game/aiBlueprintGui.lua")
-        # The finished stack goes into the player's hand, not the clipboard queue.
-        self.assertIn("player.cursor_stack.set_stack(stack)", gui)
-        sink = re.search(
-            r"local function cursor_sink\(player\).*?\nend\n",
-            gui,
-            re.S,
-        )
-        assert sink is not None
-        self.assertIn("add_to_clipboard = function(stack)", sink.group(0))
-        # An occupied cursor holds the player's own item; delivering would
-        # destroy it, so the busy check must run before Blueprints.load.
-        delivery = re.search(
-            r"local function deliver\(player, blueprint_id\).*?\nend\n",
-            gui,
-            re.S,
-        )
-        assert delivery is not None
-        body = delivery.group(0)
-        self.assertLess(
-            body.index("cursor.valid_for_read"),
-            body.index("Blueprints.load"),
-        )
-        self.assertRegex(
-            body,
-            re.compile(
-                r"if cursor\.valid_for_read then\s*\n\s*return "
-                r"\{\"gui\.sceatorio-ai-blueprints-cursor-busy\"\}",
-            ),
-        )
-        # The existing failure surface stays the one report channel.
-        self.assertIn('"gui.sceatorio-ai-blueprints-failed"', body)
-
-    def test_blueprint_module_keeps_the_contract_the_panel_leans_on(self) -> None:
-        # The panel hands aiBlueprints a delivery sink in place of the player,
+    def test_blueprint_module_keeps_the_contract_the_window_leans_on(self) -> None:
+        # The window hands aiBlueprints a delivery sink in place of the player,
         # so the sink must keep covering every member deliver_to_clipboard uses,
         # and contents must still precede the description or Factorio refuses it
         # on an empty blueprint.
         blueprints = source("src/game/aiBlueprints.lua")
-        delivery = re.search(
-            r"local function deliver_to_clipboard\(player, layout\).*?\nend\n",
-            blueprints,
-            re.S,
-        )
-        assert delivery is not None
-        body = delivery.group(0)
+        body = block(blueprints, "local function deliver_to_clipboard(player, layout)")
         self.assertEqual(
             sorted(set(re.findall(r"player\.(\w+)", body))),
             ["add_to_clipboard", "connected", "valid"],
@@ -139,31 +180,42 @@ class AiBlueprintGuiTests(unittest.TestCase):
             body.index("set_blueprint_entities"),
         )
 
-    def test_slot_icons_are_prototype_derived_and_validated(self) -> None:
+    def test_contents_are_rebuilt_from_the_inbox_on_every_open(self) -> None:
         gui = source("src/game/aiBlueprintGui.lua")
-        validator = re.search(
-            r"local function first_valid_sprite\(paths\).*?\nend\n",
-            gui,
-            re.S,
+        fill = block(gui, "local function fill(player, inventory)")
+        self.assertIn("inbox_records(player.index)", fill)
+        # Reclaim runs before the wipe, so nothing of the player's is destroyed.
+        self.assertLess(fill.index("reclaim("), fill.index("inventory.clear()"))
+        self.assertLess(fill.index("inventory.clear()"), fill.index("write_stack("))
+        # Bounded twice: the caller's own inbox and a hard slot ceiling.
+        self.assertIn("math.min(#records, MAX_SLOTS)", fill)
+        self.assertIn("for index = 1, math.min(#records, count) do", fill)
+
+    def test_inserted_items_are_returned_not_destroyed(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        # Anything that is not one of our own blueprint copies goes back to the
+        # player, and only spills to the ground when it does not fit -- a
+        # partially accepted stack must spill its remainder, never drop it.
+        give_back = block(gui, "local function give_back(player, stack)")
+        self.assertIn("player.insert(stack)", give_back)
+        self.assertLess(
+            give_back.index("player.insert(stack)"),
+            give_back.index("spill(player, stack)"),
         )
-        assert validator is not None
-        self.assertIn("pcall(helpers.is_valid_sprite_path, path)", validator.group(0))
-        # Every drawn sprite is resolved through the validator, never built
-        # straight into an element spec from a prototype name.
-        self.assertNotRegex(gui, r"sprite\s*=\s*\"(entity|item|technology)/")
-        # No element spec builds its own sprite path from a prototype name.
-        self.assertNotRegex(gui, r"(?m)^\s+sprite = .*\.\.")
-        self.assertIn('first_valid_sprite({"entity/" .. name, "item/" .. name})', gui)
-        self.assertIn("return first_valid_sprite(GENERIC_SPRITES)", gui)
-        # The icon ranking is derived from the stored layout, deterministically.
-        ranking = re.search(
-            r"local function summarize\(layout\).*?\nend\n",
-            gui,
-            re.S,
-        )
-        assert ranking is not None
-        self.assertIn("table.sort(names", ranking.group(0))
-        self.assertIn("return left < right", ranking.group(0))
+        self.assertIn("if moved >= count then return end", give_back)
+        self.assertIn("local remainder = count - moved", give_back)
+        self.assertIn("spill(player, {name = stack.name, count = remainder", give_back)
+        self.assertIn("spill_item_stack", block(gui, "local function spill(player, stack)"))
+        reclaim = block(gui, "local function reclaim(player, inventory, owned)")
+        self.assertIn("give_back(player, stack)", reclaim)
+        # Ownership is decided by the label of a blueprint still in the inbox.
+        self.assertIn('stack.name == "blueprint"', reclaim)
+        self.assertIn("owned[label]", reclaim)
+        # And the return is announced: nothing disappears silently.
+        self.assertIn('player.print({"gui.sceatorio-ai-blueprints-returned"', reclaim)
+        # Release runs the same reclaim before emptying the window.
+        release = block(gui, "local function release(player, inventory)")
+        self.assertLess(release.index("reclaim("), release.index("inventory.clear()"))
 
     def test_no_removed_scroll_policy_style(self) -> None:
         self.assertNotIn(
@@ -189,13 +241,16 @@ class AiBlueprintGuiTests(unittest.TestCase):
                 unguarded.append(f"{number}: {line.strip()}")
         self.assertEqual(unguarded, [])
         self.assertNotIn("panel.style.width", gui)
-        writer = re.search(
-            r"local function style\(element, values\).*?\nend\n",
-            gui,
-            re.S,
-        )
-        assert writer is not None
-        self.assertIn("pcall", writer.group(0))
+        writer = block(gui, "local function style(element, values)")
+        self.assertIn("pcall", writer)
+
+    def test_button_sprite_is_prototype_derived_and_validated(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        validator = block(gui, "local function first_valid_sprite(paths)")
+        self.assertIn("pcall(helpers.is_valid_sprite_path, path)", validator)
+        # No element spec builds its own sprite path from a prototype name.
+        self.assertNotRegex(gui, r"sprite\s*=\s*\"(entity|item|technology)/")
+        self.assertNotRegex(gui, r"(?m)^\s+sprite = .*\.\.")
 
     def test_rendering_is_gated_on_technology_and_global_setting(self) -> None:
         gui = source("src/game/aiBlueprintGui.lua")
@@ -209,12 +264,13 @@ class AiBlueprintGuiTests(unittest.TestCase):
                 re.S,
             ),
         )
+        # Losing access takes the button away and shuts the window with it.
         self.assertRegex(
             gui,
             re.compile(
                 r"function AiBlueprintGui\.update\(player\).*?"
                 r"if not available\(player\) then.*?button\.destroy\(\).*?"
-                r"destroy_frame\(player\)",
+                r"close_window\(player\)",
                 re.S,
             ),
         )
@@ -226,75 +282,6 @@ class AiBlueprintGuiTests(unittest.TestCase):
             ),
         )
 
-    def test_slots_are_bounded_and_paged_for_the_viewer_only(self) -> None:
-        gui = source("src/game/aiBlueprintGui.lua")
-        self.assertRegex(gui, r"local SLOTS_PER_PAGE = \d+")
-        self.assertIn("local first = (page - 1) * SLOTS_PER_PAGE + 1", gui)
-        self.assertIn("local last = math.min(#records, first + SLOTS_PER_PAGE - 1)", gui)
-        self.assertIn("for index = first, last do add_slot(grid, records[index]) end", gui)
-        self.assertIn("inbox_records(player.index)", gui)
-        self.assertNotRegex(gui, r"for .* in pairs\(game\.players\)")
-
-    def test_records_render_as_a_slot_grid(self) -> None:
-        gui = source("src/game/aiBlueprintGui.lua")
-        # A table of sprite-button slots, vanilla blueprint-book width.
-        self.assertRegex(gui, r"local SLOT_COLUMNS = \d+")
-        self.assertRegex(
-            gui,
-            re.compile(
-                r"type = \"table\",\s*\n\s*name = \"slots\",\s*\n\s*"
-                r"column_count = SLOT_COLUMNS",
-            ),
-        )
-        slot = re.search(
-            r"local function add_slot\(container, record\).*?\nend\n",
-            gui,
-            re.S,
-        )
-        assert slot is not None
-        body = slot.group(0)
-        self.assertIn('type = "sprite-button"', body)
-        self.assertIn('style = "slot_button"', body)
-        self.assertIn('tooltip = {\n      "gui.sceatorio-ai-blueprints-slot"', body)
-        self.assertIn("sceatorio_action = ACTION_LOAD", body)
-        # The row caption is gone; the detail it crammed in lives in the tooltip.
-        self.assertNotIn("sceatorio-ai-blueprints-row", gui)
-        self.assertNotIn("sceatorio-ai-blueprints-to-cursor", gui)
-
-    def test_title_bar_carries_the_close_button_alone(self) -> None:
-        gui = source("src/game/aiBlueprintGui.lua")
-        frame = re.search(
-            r"local function render_frame\(player, page, message\).*?\nend\n",
-            gui,
-            re.S,
-        )
-        assert frame is not None
-        body = frame.group(0)
-        # The frame itself carries no caption: the title bar row owns the title,
-        # a draggable spacer, and the close button, in that order.
-        header = re.search(
-            r'type = "frame",\s*\n\s*name = FRAME_NAME,\s*\n\s*direction = "vertical"',
-            body,
-        )
-        assert header is not None
-        self.assertLess(
-            body.index('style = "frame_title"'),
-            body.index('style = "draggable_space_header"'),
-        )
-        self.assertLess(
-            body.index('style = "draggable_space_header"'),
-            body.index('sprite = "utility/close"'),
-        )
-        # The hint is a full-width wrapping label, not a title-bar neighbour.
-        self.assertRegex(
-            body,
-            re.compile(
-                r'caption = \{"gui\.sceatorio-ai-blueprints-hint"\}\}\)\s*\n\s*'
-                r"style\(hint, \{single_line = false, maximal_width = ",
-            ),
-        )
-        self.assertRegex(gui, r"local FRAME_WIDTH = \d+")
-
     def test_inbox_read_is_read_only_and_owner_scoped(self) -> None:
         gui = source("src/game/aiBlueprintGui.lua")
         self.assertRegex(
@@ -305,16 +292,14 @@ class AiBlueprintGuiTests(unittest.TestCase):
                 re.S,
             ),
         )
-        reader = re.search(
-            r"local function inbox_records\(player_index\).*?\nend\n",
-            gui,
-            re.S,
-        )
-        assert reader is not None
-        body = reader.group(0)
+        body = block(gui, "local function inbox_records(player_index)")
         self.assertNotIn("Blueprints.save", body)
         self.assertNotRegex(body, r"inbox\.(order|by_id|bytes)\s*=")
         self.assertNotRegex(body, r"table\.(insert|remove)")
+        # Nothing in the module writes to another player's data or walks the
+        # whole player table.
+        self.assertNotIn("Blueprints.save", gui)
+        self.assertNotRegex(gui, r"for .* in pairs\(game\.players\)")
 
     def test_locale_strings_exist_for_every_gui_key(self) -> None:
         gui = source("src/game/aiBlueprintGui.lua")
