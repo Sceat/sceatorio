@@ -5,8 +5,11 @@ import type { Capability } from "../domain/capabilities.js";
 import {
   AddMapAnnotationInputSchema,
   AnalyzeBlueprintInputSchema,
+  CreateBlueprintBookInputSchema,
   DeleteAiBlueprintInputSchema,
+  DeleteBlueprintBookInputSchema,
   EmptyInputSchema,
+  GetBlueprintBookInputSchema,
   GetAlertsInputSchema,
   GetChartedChunksInputSchema,
   GetElectricNetworkInputSchema,
@@ -25,6 +28,7 @@ import {
   QueryEntitiesInputSchema,
   ReadCircuitPortInputSchema,
   SaveBlueprintInputSchema,
+  UpdateBlueprintBookInputSchema,
   ValidateBlueprintInputSchema,
   WaitForEventsInputSchema,
   WriteControlPortInputSchema
@@ -276,7 +280,7 @@ export const V1_TOOL_DEFINITIONS = [
   tool({
     name: "list_ai_blueprints",
     operation: "blueprint.library.list",
-    description: "List this player's immutable saved AI blueprint records; v1 records use revision 1.",
+    description: "List this player's immutable saved AI blueprint records and, unless includeBooks is false, a summary of every blueprint book they own; v1 records use revision 1.",
     capability: "blueprints:validate",
     inputSchema: ListAiBlueprintsInputSchema,
     readOnly: true,
@@ -301,6 +305,53 @@ export const V1_TOOL_DEFINITIONS = [
     description: "Permanently remove one saved AI blueprint record, with every revision, from this player's inbox; the record cannot be recovered afterwards.",
     capability: "blueprints:write",
     inputSchema: DeleteAiBlueprintInputSchema,
+    readOnly: false,
+    destructive: true,
+    idempotent: false,
+    openWorld: false
+  }),
+  tool({
+    name: "create_blueprint_book",
+    operation: "blueprint.book.create",
+    description: "Group blueprints this player already saved into a named blueprint book, in the given order; the book references the records and never copies their layouts. Save each blueprint first, then group the returned IDs.",
+    capability: "blueprints:write",
+    inputSchema: CreateBlueprintBookInputSchema,
+    readOnly: false,
+    destructive: false,
+    idempotent: false,
+    openWorld: false
+  }),
+  tool({
+    name: "get_blueprint_book",
+    operation: "blueprint.book.get",
+    description: "Read one blueprint book's name, description and ordered member blueprints; list_ai_blueprints reports which books exist.",
+    capability: "blueprints:validate",
+    inputSchema: GetBlueprintBookInputSchema,
+    readOnly: true,
+    destructive: false,
+    idempotent: true,
+    openWorld: false
+  }),
+  tool({
+    name: "update_blueprint_book",
+    operation: "blueprint.book.update",
+    description: "Rename a blueprint book, add saved blueprints to it at the end or at a position, remove members, or replace its member order. Removing a member never deletes the blueprint itself, and an update that names any blueprint this player does not own is rejected whole.",
+    capability: "blueprints:write",
+    inputSchema: UpdateBlueprintBookInputSchema,
+    // The remove and reorder operations rewrite the stored member list in
+    // place, so the honest worst case for this tool is a destructive update --
+    // of the grouping only. No blueprint record is ever destroyed by it.
+    readOnly: false,
+    destructive: true,
+    idempotent: false,
+    openWorld: false
+  }),
+  tool({
+    name: "delete_blueprint_book",
+    operation: "blueprint.book.delete",
+    description: "Permanently remove one blueprint book from this player's inbox; the book cannot be recovered afterwards, while every blueprint it grouped stays saved and loadable.",
+    capability: "blueprints:write",
+    inputSchema: DeleteBlueprintBookInputSchema,
     readOnly: false,
     destructive: true,
     idempotent: false,

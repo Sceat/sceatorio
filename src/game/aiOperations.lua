@@ -29,6 +29,10 @@ Operations.CAPABILITY_BY_OPERATION = {
   ["blueprint.library.list"] = "blueprints:validate",
   ["blueprint.library.load"] = "blueprints:write",
   ["blueprint.library.delete"] = "blueprints:write",
+  ["blueprint.book.create"] = "blueprints:write",
+  ["blueprint.book.get"] = "blueprints:validate",
+  ["blueprint.book.update"] = "blueprints:write",
+  ["blueprint.book.delete"] = "blueprints:write",
   ["circuit.port.write"] = "control_ports:write",
   ["map.annotation.add"] = "annotations:write"
 }
@@ -162,7 +166,7 @@ function Operations.execute(operation, context, payload)
   end
   if operation == "blueprint.library.list" then
     if type(payload) ~= "table" then return nil, "INVALID_REQUEST", "blueprint payload must be an object" end
-    return Blueprints.list(context, payload.query, payload.pagination)
+    return Blueprints.list(context, payload.query, payload.pagination, payload.includeBooks)
   end
   if operation == "blueprint.library.load" then
     if type(payload) ~= "table" then return nil, "INVALID_REQUEST", "blueprint payload must be an object" end
@@ -179,6 +183,26 @@ function Operations.execute(operation, context, payload)
   if operation == "blueprint.library.delete" then
     if type(payload) ~= "table" then return nil, "INVALID_REQUEST", "blueprint payload must be an object" end
     return Blueprints.delete(context, payload.blueprintId)
+  end
+  -- Books group blueprints the player already saved: every one of these calls
+  -- reads or rewrites a bounded list of IDs, never a layout, so they stay on
+  -- the cheap budget with their library neighbours and can never approach the
+  -- gateway datagram.
+  if operation == "blueprint.book.create" then
+    if type(payload) ~= "table" then return nil, "INVALID_REQUEST", "blueprint payload must be an object" end
+    return Blueprints.create_book(context, payload.name, payload.blueprintIds, payload.description)
+  end
+  if operation == "blueprint.book.get" then
+    if type(payload) ~= "table" then return nil, "INVALID_REQUEST", "blueprint payload must be an object" end
+    return Blueprints.load_book(context, payload.bookId, "inbox")
+  end
+  if operation == "blueprint.book.update" then
+    if type(payload) ~= "table" then return nil, "INVALID_REQUEST", "blueprint payload must be an object" end
+    return Blueprints.update_book(context, payload)
+  end
+  if operation == "blueprint.book.delete" then
+    if type(payload) ~= "table" then return nil, "INVALID_REQUEST", "blueprint payload must be an object" end
+    return Blueprints.delete_book(context, payload.bookId)
   end
   if operation == "circuit.port.write" then return AiControl.write_port(context, payload) end
   if operation == "map.annotation.add" then return AiControl.add_annotation(context, payload) end

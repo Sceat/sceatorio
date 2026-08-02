@@ -18,7 +18,16 @@ local MAX_LAYOUT_BYTES = 44 * 1024
 local MAX_STORED_ENTITIES = 512
 local MAX_BLUEPRINTS_PER_PLAYER = 100
 local MAX_BLUEPRINT_BYTES_PER_PLAYER = 512 * 1024
-local BLUEPRINT_INBOX_SCHEMA_VERSION = 3
+-- A book stores no layout at all: it is an ordered list of IDs of blueprints
+-- this same player already saved. That is why it pays into neither the 100
+-- record count nor the 512 KiB byte budget -- charging a book against them
+-- would let a grouping evict the very blueprints it points at. Its own two
+-- caps are what bound it: at most 20 books, each naming at most 50 members, so
+-- the whole book collection of one player cannot exceed a few KiB.
+local MAX_BOOKS_PER_PLAYER = 20
+local MAX_BOOK_MEMBERS = 50
+local BOOK_ID_PREFIX = "book:"
+local BLUEPRINT_INBOX_SCHEMA_VERSION = 4
 local MAX_ISSUES = 100
 
 local MAX_MODULE_KINDS = 8
@@ -1338,6 +1347,58 @@ local function canonical_record(id, source)
   }
 end
 
+-- A stored book is rebuilt the same way a stored blueprint is: field by field,
+-- with every bound re-applied, so a save edited by hand or written by an older
+-- Sceatorio can only ever shrink into something legal. A member that no longer
+-- names a live record of this player is dropped instead of kept as a tombstone
+-- -- a book is a list of live references, and an empty page a player cannot use
+-- is worse than a shorter book.
+local function canonical_book(id, source, known_ids)
+  if type(source) ~= "table" or not valid_string(source.name, 100) then return nil end
+  local members = {}
+  local seen = {}
+  for _, member in ipairs(type(source.members) == "table" and source.members or {}) do
+    if #members >= MAX_BOOK_MEMBERS then break end
+    if type(member) == "string" and known_ids[member] and not seen[member] then
+      seen[member] = true
+      members[#members + 1] = member
+    end
+  end
+  local description = nil
+  if type(source.description) == "string"
+    and #source.description > 0
+    and #source.description <= 1000 then
+    description = source.description
+  end
+  return {
+    id = id,
+    name = source.name,
+    description = description,
+    members = members,
+    created_tick = source.created_tick,
+    updated_tick = source.updated_tick
+  }
+end
+
+-- The one place a blueprint leaving the inbox is reflected in the books that
+-- referenced it, called by both paths that unmake a record: the owner's own
+-- delete and the budget eviction. Bounded by the two book caps, so this walks
+-- at most 20 books of at most 50 members.
+local function forget_member(inbox, blueprint_id)
+  if type(inbox.book_order) ~= "table" or type(inbox.books) ~= "table" then return end
+  for _, book_id in ipairs(inbox.book_order) do
+    local book = inbox.books[book_id]
+    if type(book) == "table" and type(book.members) == "table" then
+      for index = #book.members, 1, -1 do
+        if book.members[index] == blueprint_id then
+          table.remove(book.members, index)
+          book.updated_tick = game.tick
+        end
+      end
+    end
+  end
+end
+
 local function migrate_inbox(inbox)
   local by_id = {}
   local order = {}
@@ -1370,10 +1431,40 @@ local function migrate_inbox(inbox)
     order = retained
   end
 
+  -- Books are rebuilt last, against the records that actually survived this
+  -- migration, so an evicted blueprint can never leave a dangling reference
+  -- behind. An inbox written before books existed simply has none of these
+  -- fields and keeps every blueprint it had.
+  local books = {}
+  local book_order = {}
+  local seen_books = {}
+  for _, id in ipairs(type(inbox.book_order) == "table" and inbox.book_order or {}) do
+    if type(id) == "string" and not seen_books[id] then
+      seen_books[id] = true
+      local book = canonical_book(id, type(inbox.books) == "table" and inbox.books[id] or nil, by_id)
+      if book then
+        books[id] = book
+        book_order[#book_order + 1] = id
+      end
+    end
+  end
+  local first_book = 1
+  while (#book_order - first_book + 1) > MAX_BOOKS_PER_PLAYER do
+    books[book_order[first_book]] = nil
+    first_book = first_book + 1
+  end
+  if first_book > 1 then
+    local retained_books = {}
+    for index = first_book, #book_order do retained_books[#retained_books + 1] = book_order[index] end
+    book_order = retained_books
+  end
+
   inbox.schema_version = BLUEPRINT_INBOX_SCHEMA_VERSION
   inbox.order = order
   inbox.by_id = by_id
   inbox.bytes = bytes
+  inbox.books = books
+  inbox.book_order = book_order
   return inbox
 end
 
@@ -1385,14 +1476,18 @@ local function player_inbox(player_index)
       schema_version = BLUEPRINT_INBOX_SCHEMA_VERSION,
       order = {},
       by_id = {},
-      bytes = 0
+      bytes = 0,
+      books = {},
+      book_order = {}
     }
     root.blueprint_inbox[player_index] = inbox
   end
   if inbox.schema_version ~= BLUEPRINT_INBOX_SCHEMA_VERSION
     or type(inbox.order) ~= "table"
     or type(inbox.by_id) ~= "table"
-    or type(inbox.bytes) ~= "number" then
+    or type(inbox.bytes) ~= "number"
+    or type(inbox.books) ~= "table"
+    or type(inbox.book_order) ~= "table" then
     migrate_inbox(inbox)
   end
   return inbox
@@ -1410,6 +1505,7 @@ local function evict_oldest_until_fit(inbox, additional_bytes)
       inbox.bytes = math.max(0, inbox.bytes - record.bytes)
       inbox.by_id[id] = nil
     end
+    forget_member(inbox, id)
     evicted[#evicted + 1] = id
   end
   return evicted
@@ -1468,7 +1564,7 @@ function Blueprints.save(layout, context, delivery)
   }
 end
 
-function Blueprints.list(context, query, pagination)
+function Blueprints.list(context, query, pagination, include_books)
   local offset = parse_cursor(pagination and pagination.cursor)
   if offset == nil then
     return nil, "INVALID_CURSOR", "Blueprint inbox cursor is invalid"
@@ -1496,10 +1592,35 @@ function Blueprints.list(context, query, pagination)
       updatedTick = record.updated_tick
     }
   end
+  -- Books are summaries only and are never paginated: one player owns at most
+  -- 20 of them, so the whole collection is a few hundred bytes and always fits
+  -- the response datagram. Member lists live behind blueprint.book.get, where
+  -- exactly one book's 50 members are the bound.
+  local books = nil
+  local book_total = nil
+  if include_books ~= false then
+    books = {}
+    for _, id in ipairs(inbox.book_order) do
+      local book = inbox.books[id]
+      if book and (not lowered or string.find(string.lower(book.name), lowered, 1, true)) then
+        books[#books + 1] = {
+          bookId = book.id,
+          name = book.name,
+          description = book.description,
+          memberCount = #book.members,
+          createdTick = book.created_tick,
+          updatedTick = book.updated_tick
+        }
+      end
+    end
+    book_total = #books
+  end
   return {
     blueprints = items,
     nextCursor = last < #matches and ("offset:" .. last) or nil,
-    total = #matches
+    total = #matches,
+    books = books,
+    bookTotal = book_total
   }
 end
 
@@ -1524,6 +1645,10 @@ function Blueprints.delete(context, blueprint_id)
   end
   local bytes = type(record.bytes) == "number" and record.bytes or 0
   inbox.bytes = math.max(0, inbox.bytes - bytes)
+  -- Books hold references, so a deleted blueprint leaves every book that named
+  -- it; the books themselves survive, because deleting one blueprint is not a
+  -- request to unmake a grouping.
+  forget_member(inbox, blueprint_id)
   return {
     blueprintId = blueprint_id,
     name = record.name,
@@ -1562,6 +1687,314 @@ function Blueprints.load(context, blueprint_id, revision, delivery)
     revision = selected.revision,
     delivery = delivery,
     layout = clone_plain(selected.layout, 0)
+  }
+end
+
+-- Everything below owns blueprint books. A book is built by reference: the
+-- assistant saves each blueprint the way it always has, then names the IDs it
+-- wants grouped. Nothing here accepts a layout, which is what keeps a book far
+-- inside the 48 KiB gateway datagram no matter how large its members are.
+
+function Blueprints.is_book_id(value)
+  return type(value) == "string" and string.sub(value, 1, #BOOK_ID_PREFIX) == BOOK_ID_PREFIX
+end
+
+-- Factorio 2.1 exposes a blueprint book's pages as an ordinary inventory on the
+-- item stack itself, and that inventory is dynamic: inserting a plain blueprint
+-- item grows the book by one page. Each page is then written by the single
+-- emitter this module already owns -- deliver_to_clipboard -- through a sink
+-- that lands the finished stack in that page instead of a clipboard queue, so a
+-- page and a delivered blueprint can never drift apart.
+local function page_sink(page)
+  return {
+    valid = true,
+    connected = true,
+    add_to_clipboard = function(source) page.set_stack(source) end
+  }
+end
+
+local function deliver_book(player, book, layouts)
+  if not (player and player.valid and player.connected) then
+    return nil, "PLAYER_NOT_CONNECTED", "Book delivery requires the paired player to be connected"
+  end
+  local inventory = game.create_inventory(1)
+  local ok, reason = pcall(function()
+    local stack = inventory[1]
+    stack.set_stack({name = "blueprint-book", count = 1})
+    local pages = stack.get_inventory(defines.inventory.item_main)
+    if not (pages and pages.valid) then error("blueprint book exposes no page inventory") end
+    for index, layout in ipairs(layouts) do
+      if pages.insert({name = "blueprint", count = 1}) < 1 then
+        error("blueprint book refused page " .. index)
+      end
+      local page = pages[index]
+      if not (page and page.valid_for_read) then
+        error("blueprint book page " .. index .. " is not readable")
+      end
+      local written, code, message = deliver_to_clipboard(page_sink(page), layout)
+      if not written then error(tostring(message or code)) end
+    end
+    -- Cosmetic and guarded on purpose: a book whose label the running engine
+    -- refuses is still a usable book, so naming it must never fail the delivery.
+    pcall(function() stack.label = book.name end)
+    pcall(function() stack.blueprint_description = book.description or "" end)
+    player.add_to_clipboard(stack)
+  end)
+  inventory.destroy()
+  if not ok then
+    log("[Sceatorio] AI blueprint book delivery failed: " .. tostring(reason))
+    return nil, "BLUEPRINT_BOOK_DELIVERY_FAILED", "Factorio rejected the generated blueprint book item"
+  end
+  return true
+end
+
+-- Every book-returning call answers with the same view, so an assistant sees
+-- what it just did without a second round trip. A member whose record is gone
+-- is skipped here as well as pruned at delete time: the view can only ever
+-- describe blueprints this player still owns.
+local function book_view(inbox, book)
+  local members = {}
+  for _, member_id in ipairs(book.members) do
+    local record = inbox.by_id[member_id]
+    if record then
+      members[#members + 1] = {blueprintId = member_id, name = record.name}
+    end
+  end
+  return {
+    bookId = book.id,
+    name = book.name,
+    description = book.description,
+    members = members,
+    memberCount = #members,
+    createdTick = book.created_tick,
+    updatedTick = book.updated_tick
+  }
+end
+
+-- Wholesale or not at all: a member list that names one blueprint this player
+-- does not own, or names the same blueprint twice, is rejected before anything
+-- is written. A book never half-applies an edit.
+local function collect_members(inbox, blueprint_ids, taken)
+  if type(blueprint_ids) ~= "table" then
+    return nil, "INVALID_BOOK_MEMBERS", "blueprintIds must be an array of saved blueprint IDs"
+  end
+  local members = {}
+  local seen = {}
+  for _, id in ipairs(blueprint_ids) do
+    if #members >= MAX_BOOK_MEMBERS then
+      return nil, "INVALID_BOOK_MEMBERS", "a blueprint book holds at most " .. MAX_BOOK_MEMBERS .. " blueprints"
+    end
+    if type(id) ~= "string" then
+      return nil, "INVALID_BLUEPRINT_ID", "every blueprint ID must be a string"
+    end
+    if seen[id] or (taken and taken[id]) then
+      return nil, "DUPLICATE_BOOK_MEMBER", "a blueprint may appear in a book only once"
+    end
+    if not inbox.by_id[id] then
+      return nil, "BLUEPRINT_NOT_FOUND", "one blueprint ID is not in this player's AI inbox"
+    end
+    seen[id] = true
+    members[#members + 1] = id
+  end
+  if #members < 1 then
+    return nil, "INVALID_BOOK_MEMBERS", "a blueprint book needs at least one blueprint ID"
+  end
+  return members
+end
+
+local function member_set(book)
+  local set = {}
+  local count = 0
+  for _, id in ipairs(book.members) do
+    set[id] = true
+    count = count + 1
+  end
+  return set, count
+end
+
+function Blueprints.create_book(context, name, blueprint_ids, description)
+  if not valid_string(name, 100) then
+    return nil, "INVALID_BOOK_NAME", "Book name must contain 1 to 100 bytes"
+  end
+  if description ~= nil and (type(description) ~= "string" or #description > 1000) then
+    return nil, "INVALID_BOOK_DESCRIPTION", "Book description may contain at most 1000 bytes"
+  end
+  local inbox = player_inbox(context.player_index)
+  local members, code, message = collect_members(inbox, blueprint_ids, nil)
+  if not members then return nil, code, message end
+  -- Books are refused, never evicted: a grouping the player curated is cheap to
+  -- keep and impossible to reconstruct, so a full shelf is an error the
+  -- assistant can act on instead of a silent loss.
+  if #inbox.book_order >= MAX_BOOKS_PER_PLAYER then
+    return nil, "BLUEPRINT_BOOK_LIMIT_REACHED", "This player already holds " .. MAX_BOOKS_PER_PLAYER .. " blueprint books; delete one first"
+  end
+  local root = ai_root()
+  -- One counter for both kinds, so a book ID can never collide with a
+  -- blueprint ID and the prefix alone tells the two records apart.
+  local id = BOOK_ID_PREFIX .. context.player_index .. ":" .. root.next_blueprint_id
+  root.next_blueprint_id = root.next_blueprint_id + 1
+  local book = {
+    id = id,
+    name = name,
+    description = (type(description) == "string" and #description > 0) and description or nil,
+    members = members,
+    created_tick = game.tick,
+    updated_tick = game.tick
+  }
+  inbox.books[id] = book
+  inbox.book_order[#inbox.book_order + 1] = id
+  local view = book_view(inbox, book)
+  view.bookCount = #inbox.book_order
+  return view
+end
+
+function Blueprints.load_book(context, book_id, delivery)
+  if type(book_id) ~= "string" then
+    return nil, "INVALID_BOOK_ID", "Book ID must be a string"
+  end
+  if delivery == "cursor" and not context.allow_cursor then
+    return nil, "PLAYER_PREFERENCE_DENIED", "This player allows inbox delivery only"
+  end
+  local inbox = player_inbox(context.player_index)
+  local book = inbox.books[book_id]
+  if not book then
+    return nil, "BLUEPRINT_BOOK_NOT_FOUND", "Blueprint book is not in this player's AI inbox"
+  end
+  if delivery == "cursor" then
+    local layouts = {}
+    for _, member_id in ipairs(book.members) do
+      local record = inbox.by_id[member_id]
+      if record then layouts[#layouts + 1] = record.revisions[#record.revisions].layout end
+    end
+    local delivered, code, message = deliver_book(context.player, book, layouts)
+    if not delivered then return nil, code, message end
+  end
+  local view = book_view(inbox, book)
+  view.delivery = delivery
+  return view
+end
+
+-- The four edits a book supports, each player-scoped, each all-or-nothing, each
+-- answering with the resulting member list. Ordering is explicit everywhere:
+-- add takes an insertion position and reorder takes the complete new order,
+-- which is the smallest pair that expresses every rearrangement without a
+-- second "move" verb.
+function Blueprints.update_book(context, payload)
+  if type(payload) ~= "table" then
+    return nil, "INVALID_REQUEST", "book update payload must be an object"
+  end
+  if type(payload.bookId) ~= "string" then
+    return nil, "INVALID_BOOK_ID", "Book ID must be a string"
+  end
+  local inbox = player_inbox(context.player_index)
+  local book = inbox.books[payload.bookId]
+  if not book then
+    return nil, "BLUEPRINT_BOOK_NOT_FOUND", "Blueprint book is not in this player's AI inbox"
+  end
+  local operation = payload.operation
+  if operation == "rename" then
+    if payload.name == nil and payload.description == nil then
+      return nil, "INVALID_BOOK_UPDATE", "rename needs a name, a description, or both"
+    end
+    if payload.name ~= nil and not valid_string(payload.name, 100) then
+      return nil, "INVALID_BOOK_NAME", "Book name must contain 1 to 100 bytes"
+    end
+    if payload.description ~= nil
+      and (type(payload.description) ~= "string" or #payload.description > 1000) then
+      return nil, "INVALID_BOOK_DESCRIPTION", "Book description may contain at most 1000 bytes"
+    end
+    if payload.name ~= nil then book.name = payload.name end
+    if payload.description ~= nil then
+      book.description = #payload.description > 0 and payload.description or nil
+    end
+  elseif operation == "add" then
+    local taken = member_set(book)
+    local additions, code, message = collect_members(inbox, payload.blueprintIds, taken)
+    if not additions then return nil, code, message end
+    if #book.members + #additions > MAX_BOOK_MEMBERS then
+      return nil, "BOOK_MEMBER_LIMIT_REACHED", "a blueprint book holds at most " .. MAX_BOOK_MEMBERS .. " blueprints"
+    end
+    local position = #book.members + 1
+    if payload.position ~= nil then
+      if not integer(payload.position, 1, #book.members + 1) then
+        return nil, "INVALID_BOOK_POSITION", "position must be between 1 and the current member count plus one"
+      end
+      position = payload.position
+    end
+    for offset, id in ipairs(additions) do
+      table.insert(book.members, position + offset - 1, id)
+    end
+  elseif operation == "remove" then
+    if type(payload.blueprintIds) ~= "table" then
+      return nil, "INVALID_BOOK_MEMBERS", "blueprintIds must be an array of member blueprint IDs"
+    end
+    local present = member_set(book)
+    local removals = {}
+    local count = 0
+    for _, id in ipairs(payload.blueprintIds) do
+      if count >= MAX_BOOK_MEMBERS then
+        return nil, "INVALID_BOOK_MEMBERS", "a blueprint book holds at most " .. MAX_BOOK_MEMBERS .. " blueprints"
+      end
+      if type(id) ~= "string" or removals[id] then
+        return nil, "DUPLICATE_BOOK_MEMBER", "each member may be removed only once"
+      end
+      if not present[id] then
+        return nil, "BOOK_MEMBER_NOT_FOUND", "one blueprint ID is not a member of this book"
+      end
+      removals[id] = true
+      count = count + 1
+    end
+    if count < 1 then
+      return nil, "INVALID_BOOK_MEMBERS", "removing needs at least one member blueprint ID"
+    end
+    for index = #book.members, 1, -1 do
+      if removals[book.members[index]] then table.remove(book.members, index) end
+    end
+  elseif operation == "reorder" then
+    if type(payload.blueprintIds) ~= "table" then
+      return nil, "INVALID_BOOK_MEMBERS", "blueprintIds must list this book's current members"
+    end
+    local present, member_count = member_set(book)
+    local ordered = {}
+    local seen = {}
+    for _, id in ipairs(payload.blueprintIds) do
+      if type(id) ~= "string" or seen[id] or not present[id] then
+        return nil, "BOOK_ORDER_MISMATCH", "reorder must list exactly this book's current members, once each"
+      end
+      seen[id] = true
+      ordered[#ordered + 1] = id
+    end
+    if #ordered ~= member_count then
+      return nil, "BOOK_ORDER_MISMATCH", "reorder must list exactly this book's current members, once each"
+    end
+    book.members = ordered
+  else
+    return nil, "INVALID_BOOK_OPERATION", "operation must be rename, add, remove, or reorder"
+  end
+  book.updated_tick = game.tick
+  return book_view(inbox, book)
+end
+
+-- Deleting a book unmakes the grouping and nothing else: every blueprint it
+-- named stays in the inbox, keeps its ID, and stays loadable.
+function Blueprints.delete_book(context, book_id)
+  if type(book_id) ~= "string" then
+    return nil, "INVALID_BOOK_ID", "Book ID must be a string"
+  end
+  local inbox = player_inbox(context.player_index)
+  local book = inbox.books[book_id]
+  if not book then
+    return nil, "BLUEPRINT_BOOK_NOT_FOUND", "Blueprint book is not in this player's AI inbox"
+  end
+  inbox.books[book_id] = nil
+  for index = #inbox.book_order, 1, -1 do
+    if inbox.book_order[index] == book_id then table.remove(inbox.book_order, index) end
+  end
+  return {
+    bookId = book_id,
+    name = book.name,
+    releasedMemberCount = #book.members,
+    remainingBookCount = #inbox.book_order
   }
 end
 

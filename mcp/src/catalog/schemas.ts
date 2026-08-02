@@ -364,7 +364,118 @@ export const SaveBlueprintInputSchema = z.object({
 
 export const ListAiBlueprintsInputSchema = z.object({
   query: z.string().trim().max(200).optional(),
+  includeBooks: z.boolean().default(true),
   pagination: PaginationSchema.optional()
+}).strict();
+
+/**
+ * A book is built by reference, never by payload: it names blueprints the
+ * player already saved, so no book call can approach the 48 KiB gateway
+ * datagram however large the member layouts are. Both caps mirror the Lua
+ * inbox, which is the authority.
+ */
+export const MAX_BLUEPRINT_BOOKS_PER_PLAYER = 20;
+export const MAX_BLUEPRINT_BOOK_MEMBERS = 50;
+
+const BlueprintIdListSchema = z
+  .array(IdentifierSchema)
+  .min(1)
+  .max(MAX_BLUEPRINT_BOOK_MEMBERS);
+
+interface IssueSink {
+  addIssue(issue: {
+    code: "custom";
+    path: (string | number)[];
+    message: string;
+  }): void;
+}
+
+function rejectDuplicateIds(ids: readonly string[], context: IssueSink): void {
+  const seen = new Set<string>();
+  for (const [index, id] of ids.entries()) {
+    if (seen.has(id)) {
+      context.addIssue({
+        code: "custom",
+        path: ["blueprintIds", index],
+        message: "A blueprint may appear in a book only once"
+      });
+    }
+    seen.add(id);
+  }
+}
+
+export const CreateBlueprintBookInputSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().max(1_000).default(""),
+  blueprintIds: BlueprintIdListSchema
+}).strict().superRefine((input, context) => {
+  rejectDuplicateIds(input.blueprintIds, context);
+});
+
+export const GetBlueprintBookInputSchema = z.object({
+  bookId: IdentifierSchema
+}).strict();
+
+/**
+ * One verb per edit would have meant four near-identical tools; one tool with
+ * an explicit operation keeps the catalog flat and the refinement below makes
+ * each operation's field set exact, so an assistant cannot send a shape the
+ * Lua side would have to guess at. Reordering is expressed as the complete new
+ * member order rather than a move, which is the smaller API that still covers
+ * every rearrangement.
+ */
+export const UpdateBlueprintBookInputSchema = z.object({
+  bookId: IdentifierSchema,
+  operation: z.enum(["rename", "add", "remove", "reorder"]),
+  name: z.string().trim().min(1).max(100).optional(),
+  description: z.string().trim().max(1_000).optional(),
+  blueprintIds: BlueprintIdListSchema.optional(),
+  position: z.number().int().min(1).max(MAX_BLUEPRINT_BOOK_MEMBERS).optional()
+}).strict().superRefine((input, context) => {
+  const requiresIds = input.operation !== "rename";
+  if (requiresIds && input.blueprintIds === undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["blueprintIds"],
+      message: `blueprintIds is required for the ${input.operation} operation`
+    });
+  }
+  if (input.blueprintIds !== undefined) {
+    if (!requiresIds) {
+      context.addIssue({
+        code: "custom",
+        path: ["blueprintIds"],
+        message: "rename does not take blueprintIds"
+      });
+    }
+    rejectDuplicateIds(input.blueprintIds, context);
+  }
+  if (input.operation === "rename") {
+    if (input.name === undefined && input.description === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["name"],
+        message: "rename needs a name, a description, or both"
+      });
+    }
+  } else if (input.name !== undefined || input.description !== undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["name"],
+      message: `${input.operation} does not take a name or description`
+    });
+  }
+  if (input.position !== undefined && input.operation !== "add") {
+    context.addIssue({
+      code: "custom",
+      path: ["position"],
+      message: "position applies only to the add operation"
+    });
+  }
+});
+
+export const DeleteBlueprintBookInputSchema = z.object({
+  bookId: IdentifierSchema
 }).strict();
 
 export const LoadAiBlueprintInputSchema = z.object({

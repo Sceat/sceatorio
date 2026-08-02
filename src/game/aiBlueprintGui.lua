@@ -10,11 +10,14 @@ local ACTION_TOGGLE = "sceatorio_ai_blueprints_toggle"
 -- The window is Factorio's own inventory GUI, opened on a mod-owned inventory:
 -- the engine draws every slot, every blueprint preview, every tooltip and the
 -- whole drag-and-pick-up behaviour, so nothing here imitates a slot. It is not
--- a viewer: while it is open the window IS the inbox, so a blueprint carried
--- out of it is deleted from the inbox when it closes.
--- aiBlueprints caps an inbox at 100 records; the inventory is resized down to
--- the records actually stored, so this is only the ceiling.
-local MAX_SLOTS = 100
+-- a viewer: while it is open the window IS the inbox, so a blueprint or book
+-- carried out of it is removed from the inbox when it closes -- a book only as
+-- a grouping, never taking its member blueprints with it.
+-- aiBlueprints caps an inbox at 100 blueprints and 20 books; the inventory is
+-- resized down to the records actually stored, so this is only the ceiling --
+-- but it has to cover both collections at once, or grouping blueprints into a
+-- book would silently push the oldest blueprints out of the window.
+local MAX_SLOTS = 120
 local BUTTON_SIZE = 40
 local GAP = 8
 -- The player list owns the upper-left corner; these mirror its own geometry so
@@ -87,6 +90,9 @@ end
 
 -- Read-only view of the same storage Blueprints owns. The GUI never creates or
 -- mutates an inbox and never looks outside the viewer's own player index.
+-- Books come first because they are the coarser thing to reach for, and both
+-- kinds are flattened into one list of {id, name} so every slot below is
+-- written the same way; the ID prefix is what tells the two apart.
 local function inbox_records(player_index)
   local root = State.get()
   local ai = root and root.ai or nil
@@ -96,11 +102,21 @@ local function inbox_records(player_index)
     or type(inbox.order) ~= "table"
     or type(inbox.by_id) ~= "table" then return {} end
   local records = {}
-  -- Storage keeps the inbox oldest-first; walk it backwards for newest-first.
+  -- Storage keeps both collections oldest-first; walk them backwards for
+  -- newest-first. Books are rebuilt from their live member list on every open,
+  -- so a book edited since the last open renders with its current pages.
+  if type(inbox.book_order) == "table" and type(inbox.books) == "table" then
+    for index = #inbox.book_order, 1, -1 do
+      local book = inbox.books[inbox.book_order[index]]
+      if type(book) == "table" and type(book.members) == "table" then
+        records[#records + 1] = {id = book.id, name = book.name}
+      end
+    end
+  end
   for index = #inbox.order, 1, -1 do
     local record = inbox.by_id[inbox.order[index]]
     if type(record) == "table" and type(record.revisions) == "table" then
-      records[#records + 1] = record
+      records[#records + 1] = {id = record.id, name = record.name}
     end
   end
   return records
@@ -220,7 +236,12 @@ local function reclaim(player, inventory, manifest)
     for slot = 1, #inventory do
       local stack = inventory[slot]
       if stack.valid_for_read then
-        local label = stack.name == "blueprint" and stack_label(stack) or nil
+        -- Both kinds this window writes are recognised by their label, and both
+        -- share one manifest namespace on purpose: a book and a blueprint that
+        -- carry the same name make each other ambiguous, which is exactly the
+        -- rule that already keeps two same-named blueprints.
+        local ours = stack.name == "blueprint" or stack.name == "blueprint-book"
+        local label = ours and stack_label(stack) or nil
         local entry = label and manifest[label] or nil
         local seen = label and present[label] or 0
         if entry and seen < entry.count then
@@ -256,7 +277,31 @@ local function slot_sink(player, stack)
   }
 end
 
+-- A book reaches the player as a real blueprint-book item, built by the same
+-- module and handed to the same sink: aiBlueprints fills the book's pages from
+-- the members it still owns and this window only receives the finished stack.
+local function write_book(player, stack, book_id)
+  local ok, result, code, message = pcall(function()
+    return Blueprints.load_book(
+      {
+        player = slot_sink(player, stack),
+        player_index = player.index,
+        allow_cursor = true
+      },
+      book_id,
+      "cursor"
+    )
+  end)
+  if ok and result then return true end
+  log("[Sceatorio] AI blueprint window could not rebuild "
+    .. tostring(book_id) .. ": " .. tostring(message or code or result))
+  return false
+end
+
 local function write_stack(player, stack, blueprint_id)
+  -- The ID namespace is the record kind: aiBlueprints owns both, so the window
+  -- asks it rather than parsing the string itself.
+  if Blueprints.is_book_id(blueprint_id) then return write_book(player, stack, blueprint_id) end
   local ok, result, code, message = pcall(function()
     return Blueprints.load(
       {
@@ -331,6 +376,7 @@ local function release(player, inventory, reconcile)
   if not present then return end
   if reconcile then
     local removed = 0
+    local removed_books = 0
     local ambiguous = 0
     -- Unordered on purpose: each removal takes one distinct id out of by_id and
     -- out of order, so the inbox this loop leaves behind is the same set
@@ -338,8 +384,15 @@ local function release(player, inventory, reconcile)
     for name, entry in pairs(manifest) do
       if (present[name] or 0) < entry.count then
         if entry.id ~= nil and entry.count == 1 then
-          local ok, deleted = pcall(Blueprints.delete, {player_index = player.index}, entry.id)
-          if ok and deleted then removed = removed + 1 end
+          -- A book carried out leaves the inbox as a grouping only: its member
+          -- blueprints are separate records and stay exactly where they were.
+          if Blueprints.is_book_id(entry.id) then
+            local ok, deleted = pcall(Blueprints.delete_book, {player_index = player.index}, entry.id)
+            if ok and deleted then removed_books = removed_books + 1 end
+          else
+            local ok, deleted = pcall(Blueprints.delete, {player_index = player.index}, entry.id)
+            if ok and deleted then removed = removed + 1 end
+          end
         else
           ambiguous = ambiguous + 1
         end
@@ -347,6 +400,9 @@ local function release(player, inventory, reconcile)
     end
     if removed > 0 then
       player.print({"gui.sceatorio-ai-blueprints-removed", removed})
+    end
+    if removed_books > 0 then
+      player.print({"gui.sceatorio-ai-blueprints-book-removed", removed_books})
     end
     if ambiguous > 0 then
       player.print({"gui.sceatorio-ai-blueprints-ambiguous", ambiguous})

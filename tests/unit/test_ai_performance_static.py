@@ -79,7 +79,9 @@ class AiPerformanceStaticTests(unittest.TestCase):
     def test_blueprint_inbox_is_canonicalized_and_byte_bounded(self):
         blueprints = (ROOT / "src/game/aiBlueprints.lua").read_text(encoding="utf-8")
         self.assertIn("local MAX_BLUEPRINT_BYTES_PER_PLAYER = 512 * 1024", blueprints)
-        self.assertIn("local BLUEPRINT_INBOX_SCHEMA_VERSION = 3", blueprints)
+        # Version 4 added the books collection; the bump is what makes an
+        # existing 2.4.0 inbox run migrate_inbox exactly once on first access.
+        self.assertIn("local BLUEPRINT_INBOX_SCHEMA_VERSION = 4", blueprints)
         # Migration must never delete a record that was legal when it was saved,
         # so the persistence ceiling stays above the tightened authoring bound.
         self.assertIn("local MAX_STORED_ENTITIES = 512", blueprints)
@@ -101,6 +103,44 @@ class AiPerformanceStaticTests(unittest.TestCase):
         self.assertIn("layout = canonical", save)
         self.assertNotIn("layout = clone_plain(layout, 0)", save)
         self.assertNotIn("#inbox.order >= MAX_BLUEPRINTS_PER_PLAYER then\n    return", save)
+
+    def test_blueprint_books_are_reference_only_and_separately_bounded(self):
+        blueprints = (ROOT / "src/game/aiBlueprints.lua").read_text(encoding="utf-8")
+        # A book carries no layout, so it pays into neither the record count nor
+        # the byte budget -- charging it there would let a grouping evict the
+        # blueprints it points at. Its own two caps are the whole bound.
+        self.assertIn("local MAX_BOOKS_PER_PLAYER = 20", blueprints)
+        self.assertIn("local MAX_BOOK_MEMBERS = 50", blueprints)
+        create = blueprints[
+            blueprints.index("function Blueprints.create_book") :
+            blueprints.index("function Blueprints.load_book")
+        ]
+        self.assertNotIn("MAX_BLUEPRINT_BYTES_PER_PLAYER", create)
+        self.assertNotIn("MAX_BLUEPRINTS_PER_PLAYER", create)
+        self.assertNotIn("inbox.bytes", create)
+        self.assertNotIn("evict_oldest_until_fit", create)
+        self.assertNotIn("layout", create)
+        # A full shelf is an error the assistant can act on, never a silent
+        # eviction of a grouping the player curated.
+        self.assertIn("#inbox.book_order >= MAX_BOOKS_PER_PLAYER", create)
+        self.assertIn('"BLUEPRINT_BOOK_LIMIT_REACHED"', create)
+        # Migration bounds whatever it finds, and rebuilds books only against
+        # the records that survived, so no reference can dangle.
+        migrate = blueprints[
+            blueprints.index("local function migrate_inbox") :
+            blueprints.index("local function player_inbox")
+        ]
+        self.assertLess(migrate.index("while (#order - first + 1)"), migrate.index("canonical_book("))
+        self.assertIn("canonical_book(id, type(inbox.books) == \"table\"", migrate)
+        self.assertIn("(#book_order - first_book + 1) > MAX_BOOKS_PER_PLAYER", migrate)
+        self.assertIn("inbox.books = books", migrate)
+        self.assertIn("inbox.book_order = book_order", migrate)
+        # An inbox written before books existed keeps every blueprint it had.
+        self.assertIn('type(inbox.book_order) == "table" and inbox.book_order or {}', migrate)
+        # Both paths that unmake a record drop the references to it.
+        for owner in ("function Blueprints.delete", "local function evict_oldest_until_fit"):
+            body = blueprints[blueprints.index(owner):]
+            self.assertIn("forget_member(inbox, ", body[: body.index("\nend\n")])
 
     def test_global_enumerations_are_expensive_and_candidate_bounded(self):
         operations = (ROOT / "src/game/aiOperations.lua").read_text(encoding="utf-8")

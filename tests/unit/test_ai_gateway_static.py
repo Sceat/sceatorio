@@ -464,7 +464,7 @@ class AiGatewayStaticTests(unittest.TestCase):
         tools = (ROOT / "mcp/src/catalog/tools.ts").read_text(encoding="utf-8")
         definition = tools[
             tools.index('name: "delete_ai_blueprint"') :
-            tools.index('name: "write_control_port"')
+            tools.index('name: "create_blueprint_book"')
         ]
         self.assertIn('operation: "blueprint.library.delete"', definition)
         self.assertIn('capability: "blueprints:write"', definition)
@@ -475,6 +475,104 @@ class AiGatewayStaticTests(unittest.TestCase):
         self.assertIn("openWorld: false", definition)
         # The description must not soften what it does.
         self.assertIn("Permanently remove", definition)
+
+    def test_blueprint_books_group_by_reference_and_stay_player_scoped(self):
+        blueprints = (ROOT / "src/game/aiBlueprints.lua").read_text(encoding="utf-8")
+        create = blueprints[
+            blueprints.index("function Blueprints.create_book") :
+            blueprints.index("function Blueprints.load_book")
+        ]
+        # Members are validated against the caller's own inbox, wholesale: one
+        # foreign or repeated ID rejects the whole call before anything is
+        # written, and no other player's records are reachable.
+        self.assertIn("local inbox = player_inbox(context.player_index)", create)
+        self.assertIn("collect_members(inbox, blueprint_ids, nil)", create)
+        self.assertIn("if not members then return nil, code, message end", create)
+        self.assertNotIn("blueprint_inbox[", create)
+        self.assertNotIn("game.players", create)
+        collect = blueprints[
+            blueprints.index("local function collect_members") :
+            blueprints.index("local function member_set")
+        ]
+        self.assertIn("if not inbox.by_id[id] then", collect)
+        self.assertIn('"BLUEPRINT_NOT_FOUND"', collect)
+        self.assertIn('"DUPLICATE_BOOK_MEMBER"', collect)
+        self.assertIn("if #members >= MAX_BOOK_MEMBERS then", collect)
+        # Order is what the caller gave, preserved verbatim.
+        self.assertIn("members[#members + 1] = id", collect)
+        self.assertIn("members = members,", create)
+
+        update = blueprints[
+            blueprints.index("function Blueprints.update_book") :
+            blueprints.index("function Blueprints.delete_book")
+        ]
+        self.assertIn("local inbox = player_inbox(context.player_index)", update)
+        self.assertIn("local book = inbox.books[payload.bookId]", update)
+        self.assertIn('return nil, "BLUEPRINT_BOOK_NOT_FOUND"', update)
+        for operation in ("rename", "add", "remove", "reorder"):
+            self.assertIn(f'operation == "{operation}"', update)
+        # Adding takes an explicit insertion point; reordering takes the whole
+        # new order and rejects anything that is not a permutation of the
+        # book's current members.
+        self.assertIn("table.insert(book.members, position + offset - 1, id)", update)
+        self.assertIn('"INVALID_BOOK_POSITION"', update)
+        self.assertIn('"BOOK_ORDER_MISMATCH"', update)
+        self.assertIn("if #ordered ~= member_count then", update)
+        # Removing a member never touches the blueprint record itself.
+        self.assertNotIn("inbox.by_id[", update.split('operation == "remove"')[1])
+        self.assertIn("book.updated_tick = game.tick", update)
+        self.assertIn("return book_view(inbox, book)", update)
+
+        delete_book = blueprints[blueprints.index("function Blueprints.delete_book"):]
+        delete_book = delete_book[: delete_book.index("\nend\n")]
+        self.assertIn("inbox.books[book_id] = nil", delete_book)
+        self.assertIn("table.remove(inbox.book_order, index)", delete_book)
+        # The grouping is unmade; the blueprints it named are untouched.
+        self.assertNotIn("inbox.by_id", delete_book)
+        self.assertNotIn("inbox.order", delete_book)
+        self.assertNotIn("inbox.bytes", delete_book)
+        self.assertNotIn("Blueprints.delete(", delete_book)
+
+    def test_blueprint_book_operations_are_registered_on_documented_scopes(self):
+        operations = (ROOT / "src/game/aiOperations.lua").read_text(encoding="utf-8")
+        constants = (ROOT / "src/core/aiConstants.lua").read_text(encoding="utf-8")
+        for operation, capability in (
+            ("blueprint.book.create", "blueprints:write"),
+            ("blueprint.book.get", "blueprints:validate"),
+            ("blueprint.book.update", "blueprints:write"),
+            ("blueprint.book.delete", "blueprints:write"),
+        ):
+            self.assertIn(f'["{operation}"] = "{capability}"', operations)
+            # Books rewrite a bounded list of IDs, never a layout, so they stay
+            # on the cheap budget with their library neighbours.
+            self.assertNotIn(f'["{operation}"] = true', operations)
+        # And they never introduce a capability of their own.
+        self.assertNotIn("blueprints:books", constants)
+        self.assertNotIn("books:", constants)
+        self.assertIn("Blueprints.create_book(context, payload.name, payload.blueprintIds", operations)
+        self.assertIn('Blueprints.load_book(context, payload.bookId, "inbox")', operations)
+        self.assertIn("Blueprints.update_book(context, payload)", operations)
+        self.assertIn("Blueprints.delete_book(context, payload.bookId)", operations)
+
+        tools = (ROOT / "mcp/src/catalog/tools.ts").read_text(encoding="utf-8")
+        books = tools[
+            tools.index('name: "create_blueprint_book"') :
+            tools.index('name: "write_control_port"')
+        ]
+        for schema in (
+            "CreateBlueprintBookInputSchema",
+            "GetBlueprintBookInputSchema",
+            "UpdateBlueprintBookInputSchema",
+            "DeleteBlueprintBookInputSchema",
+        ):
+            self.assertIn(f"inputSchema: {schema}", books)
+        self.assertIn("openWorld: false", books)
+        # No book tool may accept a layout: the whole point of building by
+        # reference is that a 44 KiB layout never rides in a book call.
+        schemas = (ROOT / "mcp/src/catalog/schemas.ts").read_text(encoding="utf-8")
+        book_schemas = schemas[schemas.index("export const CreateBlueprintBookInputSchema"):]
+        self.assertNotIn("BlueprintLayoutSchema", book_schemas)
+        self.assertIn("export const MAX_BLUEPRINT_BOOK_MEMBERS = 50;", schemas)
 
     def test_blueprint_extensions_are_validated_against_real_prototypes(self):
         blueprints = (ROOT / "src/game/aiBlueprints.lua").read_text(encoding="utf-8")

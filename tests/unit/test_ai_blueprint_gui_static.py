@@ -273,6 +273,92 @@ class AiBlueprintGuiTests(unittest.TestCase):
         )
         self.assertIn("if not inventory then return end", closed)
 
+    def test_books_are_real_book_items_built_by_the_blueprint_module(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        blueprints = source("src/game/aiBlueprints.lua")
+        # The window asks aiBlueprints for the finished book stack through the
+        # same sink it already uses for a blueprint; it never assembles one.
+        book = block(gui, "local function write_book(player, stack, book_id)")
+        self.assertIn("Blueprints.load_book(", book)
+        self.assertIn("player = slot_sink(player, stack),", book)
+        self.assertIn("player_index = player.index,", book)
+        # Assembling the item -- creating the book stack, reaching into its page
+        # inventory, filling the pages -- belongs to aiBlueprints alone.
+        for owned in ("get_inventory", "defines.inventory", 'name = "blueprint-book"'):
+            self.assertNotIn(owned, gui)
+        for owned in ("set_stack", "get_inventory", "insert("):
+            self.assertNotIn(owned, book)
+        # The record kind lives in the ID namespace, and the module that owns
+        # both IDs is the one that answers which kind an ID is.
+        self.assertIn("Blueprints.is_book_id(blueprint_id)", block(gui, "local function write_stack(player, stack, blueprint_id)"))
+        self.assertNotRegex(gui, r'string\.(sub|match|find)\(')
+
+        # Factorio 2.1 exposes a book's pages as an ordinary inventory on the
+        # item stack; each page is written by the single emitter this module
+        # already owns, so a page and a delivered blueprint cannot drift apart.
+        deliver = block(blueprints, "local function deliver_book(player, book, layouts)")
+        self.assertIn('stack.set_stack({name = "blueprint-book", count = 1})', deliver)
+        self.assertIn("stack.get_inventory(defines.inventory.item_main)", deliver)
+        self.assertIn('pages.insert({name = "blueprint", count = 1})', deliver)
+        self.assertIn("deliver_to_clipboard(page_sink(page), layout)", deliver)
+        self.assertNotIn("set_blueprint_entities", deliver)
+        # Every step is fail-closed: a page the engine refuses aborts the whole
+        # delivery instead of handing over a half-built book.
+        self.assertIn("local ok, reason = pcall(function()", deliver)
+        self.assertIn("if not written then error(", deliver)
+        self.assertIn("inventory.destroy()", deliver)
+        self.assertIn('"BLUEPRINT_BOOK_DELIVERY_FAILED"', deliver)
+        # Naming a book is cosmetic and must never fail its delivery.
+        self.assertIn("pcall(function() stack.label = book.name end)", deliver)
+
+    def test_a_book_edited_since_the_last_open_renders_its_current_pages(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        blueprints = source("src/game/aiBlueprints.lua")
+        # Nothing about a book is cached in the window: fill rebuilds the record
+        # list on every open, and the stack is rebuilt from the live member list
+        # each time, so an edit made between two opens is what the player sees.
+        records = block(gui, "local function inbox_records(player_index)")
+        self.assertIn("inbox.book_order", records)
+        self.assertIn("records[#records + 1] = {id = book.id, name = book.name}", records)
+        self.assertNotRegex(records, r"members\s*=")
+        load = blueprints[
+            blueprints.index("function Blueprints.load_book") :
+            blueprints.index("function Blueprints.update_book")
+        ]
+        self.assertIn("local book = inbox.books[book_id]", load)
+        self.assertIn("for _, member_id in ipairs(book.members) do", load)
+        self.assertIn("local record = inbox.by_id[member_id]", load)
+        # A member whose record is gone is simply not a page.
+        self.assertIn("if record then layouts[#layouts + 1]", load)
+        self.assertNotIn("cache", gui)
+
+    def test_carrying_a_book_out_never_deletes_the_blueprints_inside_it(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        blueprints = source("src/game/aiBlueprints.lua")
+        release = block(gui, "local function release(player, inventory, reconcile)")
+        # The window removes exactly one record kind per manifest entry, chosen
+        # by the ID namespace, and a book removal goes through the book delete.
+        self.assertIn("Blueprints.is_book_id(entry.id)", release)
+        self.assertIn(
+            "pcall(Blueprints.delete_book, {player_index = player.index}, entry.id)",
+            release,
+        )
+        self.assertIn('player.print({"gui.sceatorio-ai-blueprints-book-removed"', release)
+        # Both kinds still obey the ambiguity rule: an entry that lost its ID
+        # because two records share a name deletes nothing at all.
+        self.assertIn("if entry.id ~= nil and entry.count == 1 then", release)
+        # A book stack is recognised by label like a blueprint stack is, in the
+        # same manifest namespace, so a book and a blueprint sharing a name make
+        # each other ambiguous instead of guessing.
+        reclaim = block(gui, "local function reclaim(player, inventory, manifest)")
+        self.assertIn('stack.name == "blueprint-book"', reclaim)
+        self.assertIn("manifest[label]", reclaim)
+        # And the module keeps the promise the window's message makes.
+        delete_book = blueprints[blueprints.index("function Blueprints.delete_book"):]
+        delete_book = delete_book[: delete_book.index("\nend\n")]
+        self.assertNotIn("inbox.by_id", delete_book)
+        self.assertIn("releasedMemberCount = #book.members", delete_book)
+
     def test_the_window_never_edits_inbox_storage_itself(self) -> None:
         gui = source("src/game/aiBlueprintGui.lua")
         self.assertIn("Blueprints.delete", gui)
