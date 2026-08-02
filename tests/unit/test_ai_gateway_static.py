@@ -433,6 +433,49 @@ class AiGatewayStaticTests(unittest.TestCase):
         self.assertNotIn("build_blueprint", blueprints)
         self.assertNotIn("create_entity", blueprints)
 
+    def test_deleting_a_blueprint_is_player_scoped_and_keeps_inbox_invariants(self):
+        blueprints = (ROOT / "src/game/aiBlueprints.lua").read_text(encoding="utf-8")
+        delete = blueprints[
+            blueprints.index("function Blueprints.delete") :
+            blueprints.index("function Blueprints.load")
+        ]
+        # The record leaves by_id and order together and gives its bytes back,
+        # which is exactly what evict_oldest_until_fit relies on.
+        self.assertIn("local inbox = player_inbox(context.player_index)", delete)
+        self.assertIn("inbox.by_id[blueprint_id] = nil", delete)
+        self.assertIn("table.remove(inbox.order, index)", delete)
+        self.assertIn("inbox.bytes = math.max(0, inbox.bytes - bytes)", delete)
+        self.assertIn("remainingCount = #inbox.order", delete)
+        self.assertIn('return nil, "BLUEPRINT_NOT_FOUND"', delete)
+        self.assertIn('return nil, "INVALID_BLUEPRINT_ID"', delete)
+        # Only the caller's own inbox is ever reachable: no other index, no walk
+        # over every player's records.
+        self.assertNotIn("blueprint_inbox[", delete)
+        self.assertNotIn("game.players", delete)
+        self.assertEqual(delete.count("player_inbox("), 1)
+
+        operations = (ROOT / "src/game/aiOperations.lua").read_text(encoding="utf-8")
+        # Registered on the documented write capability, not a new one, and on
+        # the cheap budget like its library neighbours.
+        self.assertIn('["blueprint.library.delete"] = "blueprints:write"', operations)
+        self.assertNotIn('["blueprint.library.delete"] = true', operations)
+        self.assertIn("Blueprints.delete(context, payload.blueprintId)", operations)
+
+        tools = (ROOT / "mcp/src/catalog/tools.ts").read_text(encoding="utf-8")
+        definition = tools[
+            tools.index('name: "delete_ai_blueprint"') :
+            tools.index('name: "write_control_port"')
+        ]
+        self.assertIn('operation: "blueprint.library.delete"', definition)
+        self.assertIn('capability: "blueprints:write"', definition)
+        self.assertIn("inputSchema: DeleteAiBlueprintInputSchema", definition)
+        self.assertIn("readOnly: false", definition)
+        self.assertIn("destructive: true", definition)
+        self.assertIn("idempotent: false", definition)
+        self.assertIn("openWorld: false", definition)
+        # The description must not soften what it does.
+        self.assertIn("Permanently remove", definition)
+
     def test_blueprint_extensions_are_validated_against_real_prototypes(self):
         blueprints = (ROOT / "src/game/aiBlueprints.lua").read_text(encoding="utf-8")
         validate = blueprints[

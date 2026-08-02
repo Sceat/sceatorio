@@ -373,6 +373,10 @@ export const LoadAiBlueprintInputSchema = z.object({
   delivery: z.enum(["inbox", "cursor"]).default("inbox")
 }).strict();
 
+export const DeleteAiBlueprintInputSchema = z.object({
+  blueprintId: IdentifierSchema
+}).strict();
+
 export const CircuitSignalSchema = z.object({
   type: z.enum(["item", "fluid", "virtual"]),
   name: IdentifierSchema,

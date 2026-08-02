@@ -5,6 +5,7 @@ import type { Capability } from "../domain/capabilities.js";
 import {
   AddMapAnnotationInputSchema,
   AnalyzeBlueprintInputSchema,
+  DeleteAiBlueprintInputSchema,
   EmptyInputSchema,
   GetAlertsInputSchema,
   GetChartedChunksInputSchema,
@@ -291,6 +292,17 @@ export const V1_TOOL_DEFINITIONS = [
     inputSchema: LoadAiBlueprintInputSchema,
     readOnly: false,
     destructive: false,
+    idempotent: false,
+    openWorld: false
+  }),
+  tool({
+    name: "delete_ai_blueprint",
+    operation: "blueprint.library.delete",
+    description: "Permanently remove one saved AI blueprint record, with every revision, from this player's inbox; the record cannot be recovered afterwards.",
+    capability: "blueprints:write",
+    inputSchema: DeleteAiBlueprintInputSchema,
+    readOnly: false,
+    destructive: true,
     idempotent: false,
     openWorld: false
   }),

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   BlueprintLayoutSchema,
+  DeleteAiBlueprintInputSchema,
   GetChartedChunksInputSchema,
   GetElectricNetworkInputSchema,
   GetTransportCapacitiesInputSchema,
@@ -134,7 +135,8 @@ test("the v1 tool catalog contains no unrestricted character-control tools", () 
   assert.ok(V1_TOOL_NAMES.includes("get_trains"));
   assert.ok(V1_TOOL_NAMES.includes("list_ai_blueprints"));
   assert.ok(V1_TOOL_NAMES.includes("load_ai_blueprint"));
-  assert.equal(V1_TOOL_NAMES.length, 24);
+  assert.ok(V1_TOOL_NAMES.includes("delete_ai_blueprint"));
+  assert.equal(V1_TOOL_NAMES.length, 25);
   for (const safeBoundaryTool of [
     "get_alerts",
     "get_events",
@@ -162,4 +164,26 @@ test("every tool declares exact MCP safety annotations", () => {
   assert.equal(byName.get("add_map_annotation")?.destructive, false);
   assert.equal(byName.get("write_control_port")?.destructive, true);
   assert.equal(byName.get("write_control_port")?.idempotent, false);
+  // Deleting a saved record is unrecoverable, so it must be announced as
+  // destructive and non-idempotent, on the same write capability as saving.
+  assert.equal(byName.get("delete_ai_blueprint")?.destructive, true);
+  assert.equal(byName.get("delete_ai_blueprint")?.idempotent, false);
+  assert.equal(byName.get("delete_ai_blueprint")?.readOnly, false);
+  assert.equal(byName.get("delete_ai_blueprint")?.capability, "blueprints:write");
+});
+
+test("deleting a saved blueprint takes exactly one identifier", () => {
+  assert.equal(
+    DeleteAiBlueprintInputSchema.safeParse({ blueprintId: "blueprint:1:7" }).success,
+    true
+  );
+  for (const rejected of [
+    {},
+    { blueprintId: "" },
+    { blueprintId: 7 },
+    { blueprintId: "blueprint:1:7", revision: 1 },
+    { blueprintId: "blueprint:1:7", delivery: "cursor" }
+  ]) {
+    assert.equal(DeleteAiBlueprintInputSchema.safeParse(rejected).success, false);
+  }
 });

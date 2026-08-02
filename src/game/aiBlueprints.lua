@@ -1503,6 +1503,34 @@ function Blueprints.list(context, query, pagination)
   }
 end
 
+-- The only removal a player or their assistant can ask for, and the only place
+-- besides eviction that unmakes a record. It keeps every invariant
+-- evict_oldest_until_fit leans on: the id leaves by_id and order together, and
+-- the running byte total loses exactly what that record contributed. The inbox
+-- is fetched by the caller's own player index, so no request can reach another
+-- player's records.
+function Blueprints.delete(context, blueprint_id)
+  if type(blueprint_id) ~= "string" then
+    return nil, "INVALID_BLUEPRINT_ID", "Blueprint ID must be a string"
+  end
+  local inbox = player_inbox(context.player_index)
+  local record = inbox.by_id[blueprint_id]
+  if not record then
+    return nil, "BLUEPRINT_NOT_FOUND", "Blueprint is not in this player's AI inbox"
+  end
+  inbox.by_id[blueprint_id] = nil
+  for index = #inbox.order, 1, -1 do
+    if inbox.order[index] == blueprint_id then table.remove(inbox.order, index) end
+  end
+  local bytes = type(record.bytes) == "number" and record.bytes or 0
+  inbox.bytes = math.max(0, inbox.bytes - bytes)
+  return {
+    blueprintId = blueprint_id,
+    name = record.name,
+    remainingCount = #inbox.order
+  }
+end
+
 function Blueprints.load(context, blueprint_id, revision, delivery)
   if type(blueprint_id) ~= "string" then
     return nil, "INVALID_BLUEPRINT_ID", "Blueprint ID must be a string"

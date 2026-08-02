@@ -28,6 +28,7 @@ Operations.CAPABILITY_BY_OPERATION = {
   ["blueprint.save"] = "blueprints:write",
   ["blueprint.library.list"] = "blueprints:validate",
   ["blueprint.library.load"] = "blueprints:write",
+  ["blueprint.library.delete"] = "blueprints:write",
   ["circuit.port.write"] = "control_ports:write",
   ["map.annotation.add"] = "annotations:write"
 }
@@ -171,6 +172,13 @@ function Operations.execute(operation, context, payload)
       payload.revision,
       payload.delivery or "inbox"
     )
+  end
+  -- Deleting one own record is a single table mutation, so it stays on the
+  -- cheap budget with its library neighbours (list and load); the expensive
+  -- budget guards the calls that walk the map or rebuild an item.
+  if operation == "blueprint.library.delete" then
+    if type(payload) ~= "table" then return nil, "INVALID_REQUEST", "blueprint payload must be an object" end
+    return Blueprints.delete(context, payload.blueprintId)
   end
   if operation == "circuit.port.write" then return AiControl.write_port(context, payload) end
   if operation == "map.annotation.add" then return AiControl.add_annotation(context, payload) end

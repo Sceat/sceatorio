@@ -127,7 +127,7 @@ class AiBlueprintGuiTests(unittest.TestCase):
         # Closing the window releases it instead of leaving stacks parked.
         closed = block(gui, "function AiBlueprintGui.on_gui_closed(event)")
         self.assertIn("defines.gui_type.script_inventory", closed)
-        self.assertIn("release(player, inventory)", closed)
+        self.assertIn("release(player, inventory,", closed)
 
     def test_stacks_come_from_the_blueprint_module_seam(self) -> None:
         gui = source("src/game/aiBlueprintGui.lua")
@@ -206,16 +206,125 @@ class AiBlueprintGuiTests(unittest.TestCase):
         self.assertIn("local remainder = count - moved", give_back)
         self.assertIn("spill(player, {name = stack.name, count = remainder", give_back)
         self.assertIn("spill_item_stack", block(gui, "local function spill(player, stack)"))
-        reclaim = block(gui, "local function reclaim(player, inventory, owned)")
+        reclaim = block(gui, "local function reclaim(player, inventory, manifest)")
         self.assertIn("give_back(player, stack)", reclaim)
-        # Ownership is decided by the label of a blueprint still in the inbox.
+        # Ownership is decided by the label of a blueprint this window wrote.
         self.assertIn('stack.name == "blueprint"', reclaim)
-        self.assertIn("owned[label]", reclaim)
+        self.assertIn("manifest[label]", reclaim)
         # And the return is announced: nothing disappears silently.
         self.assertIn('player.print({"gui.sceatorio-ai-blueprints-returned"', reclaim)
         # Release runs the same reclaim before emptying the window.
-        release = block(gui, "local function release(player, inventory)")
+        release = block(gui, "local function release(player, inventory, reconcile)")
         self.assertLess(release.index("reclaim("), release.index("inventory.clear()"))
+
+    def test_taking_a_blueprint_out_deletes_its_record(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        release = block(gui, "local function release(player, inventory, reconcile)")
+        # Removal goes through the module that owns the inbox; the window never
+        # edits storage itself.
+        self.assertIn(
+            "pcall(Blueprints.delete, {player_index = player.index}, entry.id)",
+            release,
+        )
+        self.assertIn('player.print({"gui.sceatorio-ai-blueprints-removed"', release)
+        # Only the engine naming this exact inventory reconciles; every other
+        # close path empties the window without deleting anything.
+        closed = block(gui, "function AiBlueprintGui.on_gui_closed(event)")
+        self.assertIn("local closed = event.inventory", closed)
+        self.assertIn("if closed ~= nil and closed ~= inventory then return end", closed)
+        self.assertIn("release(player, inventory, closed == inventory)", closed)
+        self.assertIn(
+            "release(player, inventory, false)",
+            block(gui, "local function close_window(player)"),
+        )
+
+    def test_deletion_is_refused_whenever_the_window_is_not_certain(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        # A walk that raised returns nil, and release stops before reconciling
+        # or clearing: the records and the stacks both stay.
+        reclaim = block(gui, "local function reclaim(player, inventory, manifest)")
+        self.assertIn("local walked = pcall(function()", reclaim)
+        self.assertIn("if not walked then return nil end", reclaim)
+        release = block(gui, "local function release(player, inventory, reconcile)")
+        self.assertLess(release.index("if not present then return end"), release.index("if reconcile then"))
+        self.assertLess(release.index("if not present then return end"), release.index("Blueprints.delete"))
+        # A record only becomes deletable once its stack really landed in a
+        # slot, so a failed rebuild and anything past MAX_SLOTS are never in the
+        # manifest at all.
+        fill = block(gui, "local function fill(player, inventory)")
+        self.assertRegex(
+            fill,
+            re.compile(
+                r"if not write_stack\(player, inventory\[index\], record\.id\) then\s+"
+                r"failures = failures \+ 1\s+"
+                r"elseif type\(record\.name\) == \"string\" then",
+                re.S,
+            ),
+        )
+        # A name two records share carries no id, which is what keeps both.
+        self.assertIn("entry.id = nil", fill)
+        self.assertIn("if entry.id ~= nil and entry.count == 1 then", release)
+        self.assertIn('player.print({"gui.sceatorio-ai-blueprints-ambiguous"', release)
+        # And an invalid handle never reaches any of it.
+        closed = block(gui, "function AiBlueprintGui.on_gui_closed(event)")
+        self.assertLess(
+            closed.index("stored_inventory(player.index)"),
+            closed.index("release(player, inventory,"),
+        )
+        self.assertIn("if not inventory then return end", closed)
+
+    def test_the_window_never_edits_inbox_storage_itself(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        self.assertIn("Blueprints.delete", gui)
+        # Only the module's own manifest is written here; the inbox tables are
+        # never touched, only read.
+        self.assertNotRegex(gui, r"inbox\.(order|by_id|bytes)\s*=")
+        self.assertNotRegex(gui, r"by_id\[[^\]]*\]\s*=")
+        self.assertNotIn("Blueprints.save", gui)
+
+    def test_legacy_frames_from_older_versions_are_reaped(self) -> None:
+        gui = source("src/game/aiBlueprintGui.lua")
+        # GUI elements live in the save: 2.3.0 deleted the custom frame's code
+        # but every older save still carries the frame itself, unclosable.
+        self.assertIn(
+            'local LEGACY_SCREEN_NAMES = {"sceatorio_ai_blueprint_frame"}',
+            gui,
+        )
+        reaper = block(gui, "local function destroy_legacy(player)")
+        self.assertIn("for _, name in ipairs(LEGACY_SCREEN_NAMES) do", reaper)
+        self.assertIn("player.gui.screen[name]", reaper)
+        # Every destroy is validity-guarded.
+        for line in reaper.splitlines():
+            if ".destroy()" in line:
+                self.assertIn("element.valid", line)
+        # The frame the robot policy still owns is not ours to reap.
+        self.assertNotIn("sceatorio_robot_policy_frame", reaper)
+        # It runs for every connected player on load and configuration change,
+        # and for anyone who was offline when the mod changed, before the
+        # feature-access gate can return early.
+        update = block(gui, "function AiBlueprintGui.update(player)")
+        self.assertLess(
+            update.index("destroy_legacy(player)"),
+            update.index("if not available(player) then"),
+        )
+        self.assertIn(
+            "for _, player in pairs(game.connected_players) do AiBlueprintGui.update(player) end",
+            block(gui, "function AiBlueprintGui.initialize()"),
+        )
+        self.assertIn(
+            "AiBlueprintGui.update(game.get_player(event.player_index))",
+            block(gui, "function AiBlueprintGui.on_player_joined(event)"),
+        )
+        # initialize is what on_configuration_changed runs.
+        control = source("control.lua")
+        self.assertRegex(
+            control,
+            re.compile(
+                r"local function initialize_common\(\).*?AiBlueprintGui\.initialize\(\).*?"
+                r"script\.on_configuration_changed\(function\(\).*?initialize_common\(\)",
+                re.S,
+            ),
+        )
 
     def test_no_removed_scroll_policy_style(self) -> None:
         self.assertNotIn(
