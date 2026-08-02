@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.6.0
+Date: 2026-08-02
+  Changes:
+    - The saved-blueprints window now lists your blueprint books first and no longer repeats the blueprints they hold, because you reach those by opening the book. A blueprint filed in two books is a page in both and leaves the flat list once; deleting a book puts its blueprints straight back in that list, because what a book holds is read from your live storage every time the window opens rather than tracked on the side.
+    - The player list no longer repeats the team name on every row. The row is already drawn in that team's colour, so the bracketed prefix only said what the colour said, and it was long enough to push the evolution percentage and the playtime off the right edge of the panel. Both now fit.
+---------------------------------------------------------------------------------------------------
 Version: 2.5.0
 Date: 2026-08-02
   Features:

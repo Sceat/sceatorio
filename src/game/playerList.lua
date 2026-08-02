@@ -272,7 +272,6 @@ local function render_entry(panel, listed_player, connected)
   if stale and stale.valid then stale.destroy() end
 
   local record = Teams.get_for_player(listed_player)
-  local team_name = record and record.display_name or listed_player.force.name
   local character = listed_player.character
   local physical_surface = character and character.valid and character.surface or nil
   local factor = record and physical_surface
@@ -286,9 +285,11 @@ local function render_entry(panel, listed_player, connected)
       tags = {sceatorio_player_index = listed_player.index}
     })
   end
+  -- No team name in the row: an online row is drawn in that player's own team
+  -- colour below, which already says whose team it is, and the bracketed prefix
+  -- was what pushed evolution and playtime past the panel's right edge.
   label.caption = {
     "sceatorio.player-list-entry",
-    team_name,
     listed_player.name,
     difficulty,
     format_time(listed_player.online_time)

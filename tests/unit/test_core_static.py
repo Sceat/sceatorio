@@ -21,7 +21,7 @@ class MetadataTests(unittest.TestCase):
         info = json.loads(source("info.json"))
         matrix = json.loads(source("tests/headless/matrix.json"))
         target = matrix["factorio"]["version"]
-        self.assertEqual(info["version"], "2.5.0")
+        self.assertEqual(info["version"], "2.6.0")
         self.assertEqual(info["factorio_version"], ".".join(target.split(".")[:2]))
         self.assertIn(f"base >= {target}", info["dependencies"])
         self.assertIn(f"? space-age >= {target}", info["dependencies"])
