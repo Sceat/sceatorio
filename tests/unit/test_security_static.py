@@ -179,6 +179,28 @@ class SecuritySettingsTests(unittest.TestCase):
         self.assertIn("Teams.get_by_force(radar.force)", radars)
         self.assertIn("Radars.share_discoveries(event)", control)
 
+    def test_sharing_telemetry_is_readable_from_a_running_save(self) -> None:
+        control = source("control.lua")
+        radars = source("src/game/radars.lua")
+        start = control.index('remote.add_interface("sceatorio_radars"')
+        interface = control[start : control.index("\n})", start)]
+        self.assertIn("share_chunk = function(", interface)
+        # Read-only accessor: no arguments and no call other than the status
+        # snapshot itself.
+        self.assertIn("status = function()\n    return Radars.status()", interface)
+        self.assertNotIn("share_discoveries", interface)
+        for counter in (
+            "passes = totals.passes",
+            "source_players = totals.source_players",
+            "source_radars = totals.source_radars",
+            "chunks_examined = totals.chunks_examined",
+            "generated_chunks = totals.generated_chunks",
+            "chart_writes = totals.chart_writes",
+            "remote_requests = totals.remote_requests",
+            "remote_rejections = totals.remote_rejections",
+        ):
+            self.assertIn(counter, radars)
+
     def test_joining_does_not_script_chart_ungenerated_terrain(self) -> None:
         control = source("control.lua")
         self.assertNotIn("Radars.chart(player.force", control)

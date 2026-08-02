@@ -36,6 +36,12 @@ remote.add_interface("sceatorio_teams", {
 remote.add_interface("sceatorio_radars", {
   share_chunk = function(force_name, surface_identifier, chunk_position)
     return Radars.share_chunk(force_name, surface_identifier, chunk_position)
+  end,
+  -- Read-only telemetry. The sharing counters are otherwise unreachable from a
+  -- running save, which makes the two chart cadences impossible to measure on
+  -- a live server.
+  status = function()
+    return Radars.status()
   end
 })
 
