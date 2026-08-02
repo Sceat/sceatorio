@@ -1,4 +1,17 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.1.0
+Date: 2026-08-02
+  Features:
+    - AI blueprints can now request modules. An entity carries a plain item map such as {"productivity-module-3": 4}, and Factorio checks the item is a module, that the machine's module categories and allowed effects accept it, and that the request fits the machine's module slots before it becomes a real 2.0 insert plan. Beacons finally do something.
+    - AI blueprints can now express filters: filter inserters and loaders with a whitelist or blacklist mode, splitter and lane-splitter filters with input and output lane priorities, mining drill filters, and logistic request filters for requester, buffer, infinity, roboport, cargo landing pad, and space platform hub inventories using the modern 2.0 section and filter shape.
+    - AI blueprints can now express control behavior: circuit and logistic enable conditions, inserter hand-read and stack-size control, transport belt and mining drill read modes, machine ingredient, contents, working, and set-recipe wiring, arithmetic and decider combinator parameters, and constant combinator signal sections. Every signal is resolved against a real item, fluid, or virtual signal prototype, and unknown operators, comparators, and read modes are rejected with a precise error.
+    - A button beside the player list opens your saved AI blueprints and sends any of them straight to your clipboard, so retrieving one no longer requires an AI client. It appears once your force has researched AI Assistance and the server enables the gateway.
+  Bugfixes:
+    - Fixed cursor delivery of any blueprint carrying a description, which Factorio rejected because the description was set before the blueprint had contents.
+  Changes:
+    - Blueprint layouts are now bounded at 400 entities and 512 tiles within a 44 KiB canonical layout. The previous 512-entity and 2048-tile limits were never reachable, because such a layout needs roughly 172 KiB and the gateway request datagram holds 48 KiB. Layouts that would not fit are now rejected with their measured size instead of failing at the socket.
+    - Blueprints saved before this release keep working: the AI blueprint inbox migrates them in place and the storage ceiling stays at the historical entity maximum, so no existing record is discarded.
+---------------------------------------------------------------------------------------------------
 Version: 2.0.9
 Date: 2026-08-02
   Changes:
