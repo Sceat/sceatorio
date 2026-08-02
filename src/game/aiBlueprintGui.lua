@@ -30,8 +30,21 @@ local BUTTON_SPRITES = {
   "utility/side_menu_blueprint_library_icon"
 }
 
+-- A LuaStyle only carries the keys its own style prototype defines, and touching
+-- an absent key raises instead of returning nil. LuaStyle.width is worse still:
+-- it is write-only, so reading it always raises. Every style access therefore
+-- goes through pcall, so a style the running Factorio does not expose degrades
+-- into the fallback instead of killing the event that touched it.
 local function style(element, values)
-  for key, value in pairs(values) do element.style[key] = value end
+  for key, value in pairs(values) do
+    pcall(function() element.style[key] = value end)
+  end
+end
+
+local function style_number(element, key)
+  local ok, value = pcall(function() return element.style[key] end)
+  if ok and type(value) == "number" and value > 0 then return value end
+  return nil
 end
 
 local function ai_enabled()
@@ -90,10 +103,9 @@ local function position_button(player, button)
   local panel = player.gui.screen[PLAYER_PANEL_NAME]
   local x, y
   if panel and panel.valid then
-    local width = panel.style.width
-    if not (type(width) == "number" and width > 0) then
-      width = PLAYER_PANEL_FALLBACK_WIDTH
-    end
+    -- The player list sets its panel through LuaStyle.width, which mirrors onto
+    -- minimal_width; that is the readable half of the same value.
+    local width = style_number(panel, "minimal_width") or PLAYER_PANEL_FALLBACK_WIDTH
     x = panel.location.x + math.floor((width + GAP) * scale)
     y = panel.location.y
   else

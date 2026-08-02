@@ -79,6 +79,32 @@ class AiBlueprintGuiTests(unittest.TestCase):
             source("src/game/aiBlueprintGui.lua"),
         )
 
+    def test_no_unguarded_style_property_read(self) -> None:
+        # A LuaStyle only carries the keys its own prototype defines, and reading
+        # an absent one raises immediately: LuaStyle.width is write-only, so the
+        # 2.1.0 `panel.style.width` crashed on_configuration_changed before its
+        # own numeric guard could run. Every style read here must sit inside a
+        # pcall, and every style write goes through the guarded helper.
+        gui = source("src/game/aiBlueprintGui.lua")
+        access = re.compile(r"\.style\s*(?:\.\s*\w+|\[[^\]]*\])\s*(?P<assign>=?)")
+        unguarded = []
+        for number, line in enumerate(gui.splitlines(), start=1):
+            for match in access.finditer(line):
+                trailing = line[match.end():]
+                is_write = match.group("assign") == "=" and not trailing.startswith("=")
+                if is_write or "pcall" in line:
+                    continue
+                unguarded.append(f"{number}: {line.strip()}")
+        self.assertEqual(unguarded, [])
+        self.assertNotIn("panel.style.width", gui)
+        writer = re.search(
+            r"local function style\(element, values\).*?\nend\n",
+            gui,
+            re.S,
+        )
+        assert writer is not None
+        self.assertIn("pcall", writer.group(0))
+
     def test_rendering_is_gated_on_technology_and_global_setting(self) -> None:
         gui = source("src/game/aiBlueprintGui.lua")
         self.assertIn('settings.global["sceatorio-ai-enabled"]', gui)
