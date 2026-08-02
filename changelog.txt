@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.0.9
+Date: 2026-08-02
+  Changes:
+    - AI blueprint clipboard delivery and the full server-allowed capability set are now always available to a paired player, because asking for a blueprint at a powered Uplink is already the explicit consent.
+    - The electric pole audit budget, existing-save discovery chunks, AI pairing lifetime, and AI result page size became fixed internal constants instead of operator settings, keeping today's values.
+---------------------------------------------------------------------------------------------------
 Version: 2.0.8
 Date: 2026-08-01
   Bugfixes:
