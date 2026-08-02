@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.1.1
+Date: 2026-08-02
+  Bugfixes:
+    - Fixed the server refusing to start after updating to 2.1.0. The new saved-blueprints button read a style property that Factorio does not define for that element, which raises immediately instead of returning nothing, so placing the button next to the player list aborted the mod's load and no save could be started until it was fixed.
+---------------------------------------------------------------------------------------------------
 Version: 2.1.0
 Date: 2026-08-02
   Features:
