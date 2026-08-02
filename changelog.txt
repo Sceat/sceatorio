@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.5.0
+Date: 2026-08-02
+  Features:
+    - Saved AI blueprints can now be grouped into real blueprint books. A mall or a main bus is one design, but until now your assistant could only hand you a pile of loose blueprints with no way to say which ones belonged together. It can now create a named book from blueprints you already have, and afterwards rename it, add blueprints at the end or at a chosen position, remove them, or reorder the whole thing. Your books show up in the saved-blueprints window as genuine blueprint-book items, so they preview, hover, drag and go into your hand exactly like a book you built yourself.
+    - A book groups your blueprints by pointing at them, never by copying them, so nothing is duplicated and nothing goes missing. Deleting a book leaves every blueprint it grouped saved and loadable, and deleting a blueprint removes it from any book that referenced it instead of leaving behind a page you cannot use. A book holds at most 50 blueprints and you can keep 20 of them, and books are counted separately from your blueprint storage so grouping can never evict the very layouts it points at.
+---------------------------------------------------------------------------------------------------
 Version: 2.4.0
 Date: 2026-08-02
   Features:

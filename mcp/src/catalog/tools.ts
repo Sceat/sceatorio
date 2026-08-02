@@ -269,7 +269,7 @@ export const V1_TOOL_DEFINITIONS = [
   tool({
     name: "save_blueprint",
     operation: "blueprint.save",
-    description: "Save a validated layout to the player's mod-owned inbox and optionally copy it to the opted-in clipboard.",
+    description: "Save a validated layout to the player's mod-owned inbox and, when the caller requests delivery, copy it to the player's clipboard.",
     capability: "blueprints:write",
     inputSchema: SaveBlueprintInputSchema,
     readOnly: false,

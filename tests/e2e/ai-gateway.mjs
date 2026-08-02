@@ -191,7 +191,7 @@ async function checkStdioMcp(grant) {
       params: {}
     })}\n`);
     const listed = await rpc("tools/list", {});
-    assert.equal(listed.result?.tools?.length, 25, JSON.stringify(listed));
+    assert.equal(listed.result?.tools?.length, 29, JSON.stringify(listed));
     const session = await rpc("tools/call", {name: "get_session", arguments: {}});
     assert.notEqual(session.result?.isError, true, JSON.stringify(session));
   } finally {
@@ -467,7 +467,7 @@ try {
     {},
     "TOKEN_REVOKED"
   );
-  console.log("SCEATORIO_AI_E2E_PASS: pairing, 25-tool gateway, stdio MCP, scope, replay, policy disable, expiry, and revoke verified");
+  console.log("SCEATORIO_AI_E2E_PASS: pairing, 29-tool gateway, stdio MCP, scope, replay, policy disable, expiry, and revoke verified");
 } finally {
   if (replayTransport) await replayTransport.close();
   else if (transport) await transport.close();

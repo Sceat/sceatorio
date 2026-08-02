@@ -14,7 +14,7 @@ This is the concise public contract. The implementation and tests referenced in 
 - **Immediate offline preservation:** When the last human leaves a team, tracked team-owned entities immediately become unbreakable; the first teammate back restores each exact prior destructible state.
 - **Shared radar discovery:** Every 10 seconds, already-generated chunks around connected team characters and team-owned radars are shared with every registered human team without merging forces, economies, evolution, or electric networks.
 - **Robot policy:** Per-team logistic and construction caps aggregate every fixed network and surface; policy can be disabled, warning-only, or enforced by pausing only registered crafting machines whose current recipe produces a capped robot class, while preserving each machine's prior script-disabled state.
-- **Optional AI Assistance:** AI Assistance is off by default and ships as one automation-science technology, a powered Uplink, a one-time pairing code a player creates there as their own explicit opt-in, revocation, and exactly 25 scope-checked MCP tools.
+- **Optional AI Assistance:** AI Assistance is off by default and ships as one automation-science technology, a powered Uplink, a one-time pairing code a player creates there as their own explicit opt-in, revocation, and exactly 29 scope-checked MCP tools.
 
 ## Explicit limitations
 
