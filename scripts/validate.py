@@ -393,7 +393,7 @@ def validate_portal(validation: Validation, info: dict) -> None:
         in combined,
         "unannounced third-party electricity limitation must be prominent",
     )
-    validation.require("24 scoped MCP tools" in combined, "portal copy must describe the shipped 24-tool AI boundary")
+    validation.require("25 scoped MCP tools" in combined, "portal copy must describe the shipped 25-tool AI boundary")
     validation.require("bearer credentials never enter Factorio UDP or the save" in combined, "portal copy must state the AI credential boundary")
     validation.require(
         "not affiliated with or endorsed by Anthropic" in description,

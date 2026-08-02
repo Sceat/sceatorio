@@ -146,7 +146,7 @@
       "status": "implemented",
       "fixture": "ai-gateway",
       "pass_marker": "SCEATORIO_AI_E2E_PASS",
-      "requirement": "A one-time RCON-issued code is exchanged over real Lua UDP, all 24 scoped operations cross the Factorio 2.1.12 gateway, stdio MCP lists and invokes the catalog, and replay, expiry, scope mismatch, and revoke fail closed."
+      "requirement": "A one-time RCON-issued code is exchanged over real Lua UDP, 24 of the 25 scoped operations cross the Factorio 2.1.12 gateway, stdio MCP lists and invokes the catalog, and replay, expiry, scope mismatch, and revoke fail closed."
     },
     {
       "id": "server.space-age",

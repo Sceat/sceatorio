@@ -28,7 +28,7 @@ Space Age is an optional dependency. A team's first physical arrival on each rea
 
 ## Is AI Assistance available in-game?
 
-Yes, but it is optional and off by default. The server administrator must enable it, the force must research the single red-science **AI Assistance** technology and power an AI Uplink, and each player must opt in before creating a short-lived, one-time pairing code. The local stdio companion is built separately from this GitHub source—it is not embedded in the Mod Portal ZIP—and exposes 24 low-level, scope-checked MCP tools for telemetry, structured blueprints, dedicated circuit ports, events, and private annotations.
+Yes, but it is optional and off by default. The server administrator must enable it, the force must research the single red-science **AI Assistance** technology and power an AI Uplink, and a player must create a short-lived, one-time pairing code at that Uplink, which is that player's own explicit opt-in. The local stdio companion is built separately from this GitHub source—it is not embedded in the Mod Portal ZIP—and exposes 25 low-level, scope-checked MCP tools for telemetry, structured blueprints, dedicated circuit ports, events, and private annotations.
 
 The human remains the character: there is no movement, mining, crafting, combat, teleportation, entity placement, arbitrary Lua, or RCON tool. Start Factorio with a loopback-only `--enable-lua-udp=<port>` and keep the sidecar on the same trusted host. A pairing code crosses that loopback channel once; bearer credentials do not. Revoke bindings from the Uplink whenever access is no longer wanted. A public HTTPS/OAuth endpoint is deliberately not included.
 

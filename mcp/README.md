@@ -1,6 +1,6 @@
 # Sceatorio AI/MCP companion
 
-This directory builds the vendor-neutral TypeScript MCP companion for Sceatorio. It uses the official MCP TypeScript SDK 2.0.0, targets the Factorio 2.1.12 API, and exposes exactly 24 bounded tools. Codex and Claude Code are compatible MCP hosts.
+This directory builds the vendor-neutral TypeScript MCP companion for Sceatorio. It uses the official MCP TypeScript SDK 2.0.0, targets the Factorio 2.1.12 API, and exposes exactly 25 bounded tools. Codex and Claude Code are compatible MCP hosts.
 
 The Factorio mod and companion are versioned together in this open-source repository and every tagged source release contains both. The Factorio Mod Portal ZIP intentionally contains only files Factorio can execute or display: the Lua gateway, prototypes, locale, and graphics. Node.js, this TypeScript source, tests, and dependencies stay in the companion and are never added to every joining player's mod download.
 
@@ -45,9 +45,9 @@ The command prints the server-derived access-grant JSON. Protect it like local c
 - `SCEATORIO_SERVER_POLICY_JSON`: companion policy JSON. It defaults to disabled; the minimal enabled value is `{"enabled":true}`.
 - `SCEATORIO_ACCESS_GRANT_JSON`: the exact JSON printed by the pairing command.
 
-With those values in the MCP host's private environment, run `node mcp/dist/src/index.js` over stdio. Regenerate the grant whenever the player revokes it, its configured lifetime expires, or the team gains authoritative access to a new planet/platform surface. Surface grants are immutable: the new one-time pairing revokes the old binding and includes surfaces known to the team at that moment.
+With those values in the MCP host's private environment, run `node mcp/dist/src/index.js` over stdio. Regenerate the grant whenever the player revokes it or the team gains authoritative access to a new planet/platform surface. Surface grants are immutable: the new one-time pairing revokes the old binding and includes surfaces known to the team at that moment.
 
-The pairing code expires after five minutes of game time and is consumed once. The resulting grant lasts for the server's configured **AI pairing lifetime**, 24 hours by default, unless it is revoked earlier. The code is never stored in the save. Bearer tokens and API keys never enter Factorio UDP or save data. Keep both UDP sockets on loopback; they are not an internet authentication boundary.
+The pairing code expires after five minutes of game time and is consumed once. The resulting grant carries no expiry at all: the binding lasts until it is revoked, which happens on **Revoke** in the Uplink GUI, on a new pairing that supersedes it, on a force change, when the player leaves, or when an administrator turns the gateway off. The code is never stored in the save. Bearer tokens and API keys never enter Factorio UDP or save data. Keep both UDP sockets on loopback; they are not an internet authentication boundary.
 
 ## Register with Codex
 
@@ -88,7 +88,7 @@ codex mcp remove sceatorio
 codex mcp list
 ```
 
-A consumed, expired, revoked, or superseded grant cannot be refreshed in place. Create a new code at the powered Uplink, remove the old Codex registration, repeat the exchange and registration commands, then start another new Codex session. Do not expose the Lua UDP port to a remote Codex process; the supported stdio path is deliberately loopback-only.
+A revoked or superseded grant cannot be refreshed in place. Create a new code at the powered Uplink, remove the old Codex registration, repeat the exchange and registration commands, then start another new Codex session. Do not expose the Lua UDP port to a remote Codex process; the supported stdio path is deliberately loopback-only.
 
 ## Source of truth
 
@@ -101,10 +101,10 @@ A consumed, expired, revoked, or superseded grant cannot be refreshed in place. 
 
 `npm run catalog` prints the machine-readable tool catalog derived from the executable schemas. Do not maintain a parallel handwritten list.
 
-Every catalog entry explicitly declares read-only, destructive, idempotent, and open-world metadata. All 24 tools are closed-world. The dedicated output-port write is destructive/non-idempotent; blueprint save/load and private annotation are non-destructive/non-idempotent.
+Every catalog entry explicitly declares read-only, destructive, idempotent, and open-world metadata. All 25 tools are closed-world. The dedicated output-port write and the saved-blueprint delete are destructive/non-idempotent; blueprint save/load and private annotation are non-destructive/non-idempotent.
 
 ## Safety and deployment boundary
 
-No tool moves, mines, crafts, fights, teleports, places entities, runs arbitrary Lua/RCON, edits train schedules or logistic requests, or mutates generic factory entities. Writes are limited to the dedicated AI output port, the player's mod-owned blueprint inbox/opt-in clipboard, and private TTL annotations.
+No tool moves, mines, crafts, fights, teleports, places entities, runs arbitrary Lua/RCON, edits train schedules or logistic requests, or mutates generic factory entities. Writes are limited to the dedicated AI output port, the player's mod-owned blueprint inbox, their clipboard when the caller explicitly asks for cursor delivery, and private TTL annotations.
 
 `createSceatorioMcpHandler()` is available for an integrator-owned Streamable HTTP service, but this repository does not ship an authorization server or public endpoint. Such a deployment must add and test OAuth 2.1 validation, per-request grant resolution, revocation, TLS, redacted logs, and network isolation without exposing Factorio UDP.

@@ -36,7 +36,7 @@ Factorio synchronizes incoming UDP data as multiplayer input actions. Other peer
 
 AI assistance is off by default. Access is the intersection of all three layers:
 
-1. **Server policy:** an administrator explicitly enables the Factorio gateway and sets allowed capabilities, per-player rates, and save-wide total and expensive request rates. The TypeScript companion separately bounds request timeouts; binding lifetime, page size, event-ring, and blueprint limits are fixed implementation constants.
+1. **Server policy:** an administrator explicitly enables the Factorio gateway and sets allowed capabilities, per-player rates, and save-wide total and expensive request rates. The TypeScript companion separately bounds request timeouts; page size, event-ring, and blueprint limits are fixed implementation constants. A binding has no lifetime constant at all — nothing retires it but revocation.
 2. **Force technology:** the single `AI Assistance` technology costs only automation science and unlocks the powered Uplink plus dedicated input/output ports. A force unlock never opts a human in.
 3. **Pairing grant:** a short-lived, single-use code from a powered Uplink binds one local MCP subject to one human, save, force, team, and explicit surface grants. The player can revoke bindings from the Uplink GUI.
 
@@ -53,7 +53,7 @@ An access grant contains:
 - Save, player, force, and team IDs.
 - The effective capability set.
 - Explicit authorized surfaces.
-- Player preferences, issuance time, expiry, and revocation state.
+- Player preferences, issuance time, and revocation state. A grant carries no expiry; revocation is the only end state.
 
 Clients never provide `saveId`, `playerId`, or `forceId` as tool arguments. The sidecar injects those fields from the validated grant. A requested `surfaceId` must appear in that grant and must still belong to the paired force when Factorio executes the request.
 
@@ -82,7 +82,7 @@ A layout holds at most 400 entities and 512 tiles, and its canonical encoding at
 
 1. Save a new immutable record in the paired player's mod-owned AI library. V1 records use revision `1`; the field is reserved for future compatible evolution rather than implying update history.
 2. Expose that virtual record through the mod-owned per-player AI Blueprint Inbox.
-3. Copy it to the player's cursor only when that player allows cursor delivery.
+3. Copy it to the paired player's cursor only when the caller explicitly requests cursor delivery.
 4. Never place ghosts or entities automatically.
 
 Factorio mods cannot write directly to the persistent native **My Blueprints** shelf. The player can use the normal Factorio action to move a cursor-delivered blueprint there. The bounded per-player in-save library retains the newest 100 immutable records within a 512 KiB canonical-layout budget, evicting oldest records first, without pretending to bypass this API restriction.
@@ -122,9 +122,9 @@ The scaffold deliberately does not invent an authorization server. Production de
 
 ## Implemented local path and remaining deployment boundary
 
-The Factorio mod ships the one-technology prototypes, powered Uplink GUI, the global opt-in, one-time pairing/revocation, save/player/force/surface/capability checks, shared per-player quotas, bounded UDP dispatcher, all 24 operation handlers, bounded event waits, structured blueprint validation and per-player inbox, explicitly requested clipboard delivery, dedicated circuit ports, TTL-cleared writes, and private annotations.
+The Factorio mod ships the one-technology prototypes, powered Uplink GUI, the global opt-in, one-time pairing/revocation, save/player/force/surface/capability checks, shared per-player quotas, bounded UDP dispatcher, all 25 operation handlers, bounded event waits, structured blueprint validation and per-player inbox, explicitly requested clipboard delivery, dedicated circuit ports, TTL-cleared writes, and private annotations.
 
-The real Factorio 2.1.12 gate starts an isolated dedicated server with Lua UDP, exchanges actual gateway datagrams, exercises all 24 operation paths, drives the compiled MCP server through an independent stdio client, and covers exact pairing/operation replay, UUID conflict without code consumption, policy-off buffering, authorization-before-cache, expiry, force/surface mismatch, shared quota across re-pairing, and revocation. The headless annotation path intentionally proves the real-player requirement by receiving `PLAYER_REQUIRED`.
+The real Factorio 2.1.12 gate starts an isolated dedicated server with Lua UDP, exchanges actual gateway datagrams, exercises 24 of the 25 operation paths — the saved-blueprint delete added in 2.4.0 is covered by the static and TypeScript suites instead — drives the compiled MCP server through an independent stdio client, and covers exact pairing/operation replay, UUID conflict without code consumption, policy-off buffering, authorization-before-cache, expiry, force/surface mismatch, shared quota across re-pairing, and revocation. The headless annotation path intentionally proves the real-player requirement by receiving `PLAYER_REQUIRED`.
 
 This repository does not ship an internet-facing server or an authorization server. Anyone exposing the handler over Streamable HTTP must separately prove issuer/audience validation, protected-resource metadata, TLS/reverse-proxy behavior, per-request grant resolution, revocation, and deployment isolation. The Factorio UDP port must never be exposed beyond loopback.
 

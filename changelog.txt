@@ -1,6 +1,10 @@
 ---------------------------------------------------------------------------------------------------
-Version: 2.3.0
+Version: 2.4.0
 Date: 2026-08-02
+  Features:
+    - Saved AI blueprints can now be deleted. Until now the only way one ever left your inbox was automatic eviction once it filled up, so a first draft you never wanted stayed there for good. Your assistant can remove one by name with the new delete tool, and the saved-blueprints window is now the inbox itself rather than a view of it: a blueprint you carry out of that window has moved out, and closing the window makes it so. Every ambiguous case resolves toward keeping the record, so the worst thing that can happen is a duplicate blueprint item in your inventory, never a lost layout.
+  Bugfixes:
+    - Fixed the old saved-blueprints panel getting stuck on screen after updating. Factorio keeps GUI elements in the save, not in the mod, so when 2.3.0 replaced that hand-drawn panel with the game's own inventory window it left the frame behind on every save that had one: no caption, no working close button, and no code left to answer its clicks. That leftover frame is now removed on load and when you join, for everyone who was offline at the time too.
   Features:
     - Asking about an entity now answers the questions a blueprint author actually has: where its pipes connect and which way the fluid flows, how much each fluid box holds, where an inserter picks up and drops and how fast it swings, how many module slots it has and which modules and effects it accepts, and what it can craft. A client was reading Factorio's own data files to find a refinery's pipe positions, because nothing said the running game would tell it.
   Changes:

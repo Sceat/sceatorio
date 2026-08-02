@@ -9,7 +9,7 @@ Sceatorio is a friendly multiplayer scenario mode for groups that want the same 
 - Connected players and team radars share their nearby, already-generated map discovery with every registered human team, without merging forces, economies, evolution, or electric networks.
 - The compact top-left player panel shows exact online/offline totals and every friend's cumulative playtime without growing indefinitely; each section has simple pages when needed.
 - Configurable per-team robot limits aggregate all fixed networks and surfaces; enforcement pauses only crafting machines currently producing the capped robot class, and never moves, deletes, or hides robot items.
-- Optional AI Assistance is off by default and uses one automation-science technology, a powered Uplink, per-player opt-in, one-time pairing codes, and 24 scoped MCP tools.
+- Optional AI Assistance is off by default and uses one automation-science technology, a powered Uplink, one-time pairing codes a player creates as their own explicit opt-in, and 25 scoped MCP tools.
 
 Evolution, offline protection, electricity, planet spawns, and robot policy are configurable through runtime map settings. Construction robots have a deliberately roomier policy than logistic robots, but server operators choose the actual limits.
 

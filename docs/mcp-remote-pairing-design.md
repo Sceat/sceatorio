@@ -78,7 +78,7 @@ design adds on top:
 **Honest ceiling of a stolen bearer.** It can read that one player's force (production, power,
 research, logistics, trains, map, circuits, alerts) and it can write exactly three things: toggle
 that player's own `sceatorio-ai-output-port` entities (1 change / 5 s, save-wide budget), drop
-blueprints into that player's inbox (cursor only if the player opted in), and place map
+blueprints into that player's inbox (their cursor only when the call asks for it), and place map
 annotations while that player is connected. It cannot move, mine, craft, fight, place entities,
 run Lua or RCON, touch another force, exceed the per-player quota, or survive one click of Revoke.
 That bounded write surface is why a first-party bearer is proportionate here. Since 2026-08-02 no

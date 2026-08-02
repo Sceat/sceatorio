@@ -14,7 +14,7 @@ Sceatorio is a friendly Factorio multiplayer scenario mod for people who want on
 - Electricity isolation with bounded background auditing, exact player refunds, and mutual owner opt-in for deliberate sharing.
 - Connected-player and team-radar discovery is shared among all Sceatorio human teams without merging their forces, economies, evolution, or electric networks. The original 70-tile player and 112-tile radar footprints are polled every 10 seconds, and only chunks that Factorio has already generated can be revealed.
 - Configurable per-team robot policy that aggregates all fixed networks/surfaces and favors belts with default caps of 500 logistic and 5,000 construction robots. Enforcement pauses only crafting machines currently producing the capped robot class; it never moves, deletes, or hides robot items.
-- Optional, default-off AI Assistance through one automation-science technology, a powered Uplink, per-player opt-in, one-time pairing/revocation, and 24 scope-checked MCP tools.
+- Optional, default-off AI Assistance through one automation-science technology, a powered Uplink, one-time pairing codes a player creates as their own explicit opt-in, revocation, and 25 scope-checked MCP tools.
 - Shared chat/research notices, death messages, and a compact top-left player list with accurate online/offline counts and independently paged access to every player's total playtime.
 
 The generated [feature contract](docs/features.md) is the concise source of truth for shipped behavior and limitations. Runtime setting names, defaults, ranges, and descriptions are generated from the Lua prototypes and locale in [settings.md](docs/settings.md).
@@ -57,7 +57,7 @@ raise `on_chunk_charted` in Factorio 2.1.12.
 
 ## AI/MCP status
 
-The tagged open-source release includes both the fail-closed Lua gateway and TypeScript [MCP companion](mcp/README.md), with exact Codex setup commands and a versioned [security architecture](docs/claude-mcp-architecture-v1.md). The Mod Portal ZIP remains Factorio-only; it does not make every joining player download Node.js source or dependencies. The real Factorio 2.1.12 end-to-end test covers one-time pairing, all 24 operation paths, stdio MCP initialization/list/call, scope rejection, replay, expiry, shared per-player quota, and revocation.
+The tagged open-source release includes both the fail-closed Lua gateway and TypeScript [MCP companion](mcp/README.md), with exact Codex setup commands and a versioned [security architecture](docs/claude-mcp-architecture-v1.md). The Mod Portal ZIP remains Factorio-only; it does not make every joining player download Node.js source or dependencies. The real Factorio 2.1.12 end-to-end test covers one-time pairing, 24 of the 25 operation paths, stdio MCP initialization/list/call, scope rejection, replay, expiry, shared per-player quota, and revocation.
 
 The human remains the character. No tool moves, mines, crafts, fights, teleports, places entities, runs arbitrary Lua/RCON, or changes generic factory state. The tested release path is local stdio over loopback UDP; an internet-facing Streamable HTTP/OAuth endpoint is not shipped by this repository. See the [end-to-end gate](docs/mcp-e2e-release-gate.md) for the exact evidence and remaining production boundary.
 

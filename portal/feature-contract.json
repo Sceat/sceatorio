@@ -79,8 +79,8 @@
     {
       "id": "ai-assistance",
       "label": "Optional AI Assistance",
-      "statement": "AI Assistance is off by default and ships as one automation-science technology, a powered Uplink, per-player opt-in, one-time pairing and revocation, and exactly 24 scope-checked MCP tools.",
-      "portal_phrase": "Optional AI Assistance is off by default and uses one automation-science technology, a powered Uplink, per-player opt-in, one-time pairing codes, and 24 scoped MCP tools.",
+      "statement": "AI Assistance is off by default and ships as one automation-science technology, a powered Uplink, a one-time pairing code a player creates there as their own explicit opt-in, revocation, and exactly 25 scope-checked MCP tools.",
+      "portal_phrase": "Optional AI Assistance is off by default and uses one automation-science technology, a powered Uplink, one-time pairing codes a player creates as their own explicit opt-in, and 25 scoped MCP tools.",
       "evidence": [
         {"path": "data.lua", "contains": "name = \"sceatorio-ai-assistance\""},
         {"path": "src/game/aiGateway.lua", "contains": "local function handle_pairing_exchange"},
