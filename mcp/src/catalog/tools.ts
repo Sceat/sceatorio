@@ -109,7 +109,7 @@ export const V1_TOOL_DEFINITIONS = [
   tool({
     name: "get_prototype",
     operation: "prototype.get",
-    description: "Read objective properties for one named Factorio prototype.",
+    description: "Read objective properties for one named Factorio prototype, including an entity's fluid box pipe connections with their positions, flow directions and volume, inserter pickup and drop geometry and speeds, module slot count with allowed module categories and effects, and crafting categories.",
     capability: "prototypes:read",
     inputSchema: GetPrototypeInputSchema,
     readOnly: true,

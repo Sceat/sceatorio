@@ -1,6 +1,10 @@
 ---------------------------------------------------------------------------------------------------
-Version: 2.2.0
+Version: 2.3.0
 Date: 2026-08-02
+  Features:
+    - Asking about an entity now answers the questions a blueprint author actually has: where its pipes connect and which way the fluid flows, how much each fluid box holds, where an inserter picks up and drops and how fast it swings, how many module slots it has and which modules and effects it accepts, and what it can craft. A client was reading Factorio's own data files to find a refinery's pipe positions, because nothing said the running game would tell it.
+  Changes:
+    - Your saved AI blueprints now open in Factorio's own inventory window instead of a panel drawn by hand. They are real blueprint items, so you get the game's own previews, labels, hover, drag and pick-up, and you take one out and place it exactly like any blueprint from the library. The window rebuilds from your saved blueprints every time it opens, so it can never quietly become storage, and anything you put into it is handed straight back.
   Features:
     - Server operators can now read the map-sharing counters from a running save through the "sceatorio_radars" remote interface: passes, players and radars used as sources, chunks examined, chart writes, and remote requests and rejections. The mod already counted all of it, but nothing handed the numbers back, so diagnosing how much map traffic sharing costs meant guessing.
   Changes:
