@@ -236,8 +236,12 @@ function Telemetry.on_entity_removed(entity)
   local state = State.get()
   local refs = state and state.ai and state.ai.entity_refs or nil
   if not refs then return end
-  refs = migrate_entity_refs(refs)
-  refs.by_unit[entity.unit_number] = nil
+  -- Both ref schemas key by_unit by unit number, so presence answers "is this
+  -- entity indexed" without migrating first. Migration is a read/write-path
+  -- repair (entity_ref_root); an entity nobody indexed costs one lookup here.
+  local by_unit = type(refs.by_unit) == "table" and refs.by_unit or nil
+  if not by_unit or by_unit[entity.unit_number] == nil then return end
+  migrate_entity_refs(refs).by_unit[entity.unit_number] = nil
 end
 
 local function resolve_entity(context, id)

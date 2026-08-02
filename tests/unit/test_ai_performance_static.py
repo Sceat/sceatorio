@@ -203,6 +203,96 @@ class AiPerformanceStaticTests(unittest.TestCase):
             gateway,
         )
 
+    def test_event_rings_exist_only_for_forces_that_can_read_them(self):
+        events = (ROOT / "src/game/aiEvents.lua").read_text(encoding="utf-8")
+        # The guard sits on the single funnel every record call site goes
+        # through, so no future event type can reintroduce an unreadable ring.
+        self.assertIn('local Teams = require("src.game.teams")', events)
+        readable = events[
+            events.index("function AiEvents.readable_force") :
+            events.index("function AiEvents.record")
+        ]
+        self.assertIn("Teams.get_by_force(force)", readable)
+        # The headless development pairing binds game.forces.player, which is
+        # never a team; dropping it would silence a client that does read.
+        self.assertIn('force.name == "player" and dev_tools_enabled()', readable)
+        # Team lookup first: an enemy force fails the name compare and never
+        # reaches a settings read on the death path.
+        self.assertLess(
+            readable.index("Teams.get_by_force(force)"),
+            readable.index("dev_tools_enabled()"),
+        )
+        record = events[
+            events.index("function AiEvents.record") :
+            events.index("local function parse_cursor")
+        ]
+        self.assertIn("if not AiEvents.readable_force(force) then return end", record)
+        self.assertLess(
+            record.index("readable_force(force)"),
+            record.index("force_event_root("),
+        )
+        # A readable force still allocates and appends exactly as before.
+        self.assertIn("force_event_root(force.index, true)", record)
+        self.assertIn("events.slots[((id - 1) % events.capacity) + 1] = {", record)
+        # Ring creation happens on exactly one line, and it is the guarded one.
+        creating = [
+            line for line in events.splitlines()
+            if "force_event_root(" in line and "true" in line
+        ]
+        self.assertEqual(len(creating), 1)
+        self.assertIn("force_event_root(force.index, true)", creating[0])
+
+    def test_entity_death_hot_path_exits_before_any_bookkeeping(self):
+        gateway = (ROOT / "src/game/aiGateway.lua").read_text(encoding="utf-8")
+        removed = gateway[
+            gateway.index("function Gateway.on_entity_removed") :
+            gateway.index("function Gateway.on_player_changed_force")
+        ]
+        guard = (
+            "if not (entity and entity.valid "
+            "and AiEvents.readable_force(entity.force)) then return end"
+        )
+        self.assertIn(guard, removed)
+        self.assertLess(
+            removed.index('global_value("sceatorio-ai-enabled", false)'),
+            removed.index(guard),
+        )
+        # A biter death allocates nothing, writes no storage and reads no
+        # prototype name: every remaining statement sits behind the guard.
+        for work in (
+            "AiEvents.record",
+            "AiConstants.OUTPUT_PORT",
+            "AiControl.on_entity_removed",
+            "Telemetry.on_entity_removed",
+            "AiConstants.UPLINK",
+            "pending_pairings",
+            "root().bindings",
+        ):
+            self.assertLess(removed.index(guard), removed.index(work))
+
+    def test_untracked_entity_removal_skips_the_reference_migration(self):
+        telemetry = (ROOT / "src/game/aiTelemetry.lua").read_text(encoding="utf-8")
+        removed = telemetry[
+            telemetry.index("function Telemetry.on_entity_removed") :
+            telemetry.index("local function resolve_entity")
+        ]
+        self.assertNotIn("entity_ref_root()", removed)
+        self.assertIn(
+            'local by_unit = type(refs.by_unit) == "table" and refs.by_unit or nil',
+            removed,
+        )
+        self.assertIn(
+            "if not by_unit or by_unit[entity.unit_number] == nil then return end",
+            removed,
+        )
+        # Both schemas key by_unit by unit number, so the presence test is what
+        # lets the migration stay behind it instead of running per death.
+        self.assertLess(
+            removed.index("by_unit[entity.unit_number] == nil then return end"),
+            removed.index("migrate_entity_refs(refs)"),
+        )
+        self.assertEqual(removed.count("migrate_entity_refs"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

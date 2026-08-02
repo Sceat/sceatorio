@@ -1,4 +1,5 @@
 local State = require("src.core.state")
+local Teams = require("src.game.teams")
 
 local AiEvents = {}
 
@@ -8,6 +9,24 @@ local EVENT_SCHEMA_VERSION = 2
 local function enabled()
   local setting = settings.global["sceatorio-ai-enabled"]
   return setting and setting.value or false
+end
+
+local function dev_tools_enabled()
+  local setting = settings.global["sceatorio-dev-tools-enabled"]
+  return setting and setting.value or false
+end
+
+-- A ring is only ever read through a binding, and a binding only ever exists on
+-- a registered Sceatorio team force or, behind the dev-tools switch, on the
+-- headless development pairing's game.forces.player. Every other force -- the
+-- per-team enemy forces every biter dies on, neutral, lobby -- can never hold a
+-- reader, so recording for one would allocate into a ring nothing can list.
+-- The team lookup runs first because it is the only branch a real event takes;
+-- the enemy-force case fails the name compare and never reads a setting.
+function AiEvents.readable_force(force)
+  if not (force and force.valid) then return false end
+  if Teams.get_by_force(force) then return true end
+  return force.name == "player" and dev_tools_enabled()
 end
 
 local function event_root()
@@ -55,9 +74,8 @@ function AiEvents.record(event_type, source, details)
     force = entity.force
     surface = entity.surface
   end
-  local force_index = force and force.valid and force.index or nil
-  local events = force_event_root(force_index, true)
-  if not events then return end
+  if not AiEvents.readable_force(force) then return end
+  local events = force_event_root(force.index, true)
   local id = events.next_id
   events.next_id = id + 1
   events.slots[((id - 1) % events.capacity) + 1] = {

@@ -1333,7 +1333,13 @@ end
 function Gateway.on_entity_removed(event)
   if not global_value("sceatorio-ai-enabled", false) then return end
   local entity = event.entity
-  if not entity then return end
+  -- control.lua routes on_entity_died here, so every biter kill lands in this
+  -- handler while a player holds fire. Nothing below can concern an entity on a
+  -- force no binding can see: output ports, uplinks, entity refs and pairing
+  -- codes are all created inside a binding's own force. Leaving on the force
+  -- check keeps the common case free of allocation, storage writes and the
+  -- prototype-name reads underneath.
+  if not (entity and entity.valid and AiEvents.readable_force(entity.force)) then return end
   AiEvents.record("entity.removed", event)
   if entity.name == AiConstants.OUTPUT_PORT then AiControl.on_entity_removed(entity) end
   Telemetry.on_entity_removed(entity)
