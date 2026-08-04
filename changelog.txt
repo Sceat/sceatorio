@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.6.1
+Date: 2026-08-04
+  Bugfixes:
+    - Fixed a team being unable to create any space platform. The rocket silo's "new platform" window lists the planets your force has unlocked as a space location, and Factorio hands Nauvis to the starting force only, so a force the mod created for a team arrived at that window with an empty planet list and no way to launch. Team forces are now given Nauvis the moment they exist, and every team in an existing save is repaired on load, so nobody has to ask an administrator for a command. Every other destination is still yours to earn: Vulcanus, Gleba, Fulgora, Aquilo, the solar system edge and the shattered planet are unlocked by their own research, which already applies to your team alone.
+---------------------------------------------------------------------------------------------------
 Version: 2.6.0
 Date: 2026-08-02
   Changes:

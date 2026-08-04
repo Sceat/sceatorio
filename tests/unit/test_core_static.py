@@ -21,7 +21,7 @@ class MetadataTests(unittest.TestCase):
         info = json.loads(source("info.json"))
         matrix = json.loads(source("tests/headless/matrix.json"))
         target = matrix["factorio"]["version"]
-        self.assertEqual(info["version"], "2.6.0")
+        self.assertEqual(info["version"], "2.6.1")
         self.assertEqual(info["factorio_version"], ".".join(target.split(".")[:2]))
         self.assertIn(f"base >= {target}", info["dependencies"])
         self.assertIn(f"? space-age >= {target}", info["dependencies"])
@@ -291,6 +291,119 @@ class TeamAndJoinTests(unittest.TestCase):
         ]
         self.assertIn("pending_teleports[player.index]", joined)
         self.assertIn("not root.pending_teleports[player_index]", body)
+
+
+class SpaceLocationTests(unittest.TestCase):
+    """A team force with no unlocked space location cannot create a platform.
+
+    Space Age fills the rocket silo's platform dialog from the force's unlocked
+    space locations, and the engine grants Nauvis to the starting force only, so
+    every mod-created team force reached that dialog empty until 2.6.1.
+    """
+
+    def helper(self) -> str:
+        teams = source("src/game/teams.lua")
+        body = re.search(
+            r"local function unlock_home_space_location\(force\)(.*?)\nend",
+            teams,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(body)
+        return body.group(1)
+
+    def test_home_unlock_is_feature_detected_not_assumed(self) -> None:
+        # Sceatorio also runs Base-only, where neither the space-location API nor
+        # the prototype needs to exist; both calls are probed, never assumed.
+        body = self.helper()
+        self.assertRegex(
+            body,
+            r"pcall\(function\(\)\s*return force\.is_space_location_unlocked\("
+            r"HOME_SPACE_LOCATION\)\s*end\)",
+        )
+        self.assertRegex(
+            body,
+            r"return pcall\(function\(\)\s*force\.unlock_space_location\("
+            r"HOME_SPACE_LOCATION\)\s*end\)",
+        )
+        self.assertIn("if not supported or unlocked then return false end", body)
+        self.assertLess(
+            body.index("is_space_location_unlocked"),
+            body.index("force.unlock_space_location"),
+        )
+
+    def test_new_and_adopted_team_forces_receive_the_home_unlock(self) -> None:
+        teams = source("src/game/teams.lua")
+        record = re.search(
+            r"local function make_record\("
+            r"id, force, enemy_force, owner_player_index, display_name\)(.*?)\nend",
+            teams,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(record)
+        # make_record is the one place a force becomes a team, so both
+        # Teams.create and Teams.register_force inherit the unlock from it.
+        self.assertIn("unlock_home_space_location(force)", record.group(1))
+        self.assertIn("make_record(", teams[teams.index("function Teams.create"):])
+        self.assertIn(
+            "make_record(", teams[teams.index("function Teams.register_force"):]
+        )
+
+    def test_existing_saves_are_repaired_without_an_admin_command(self) -> None:
+        teams = source("src/game/teams.lua")
+        control = source("control.lua")
+        backfill = re.search(
+            r"function Teams\.ensure_space_locations\(\)(.*?)\nend",
+            teams,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(backfill)
+        self.assertIn("pairs(State.get().teams_by_id)", backfill.group(1))
+        self.assertIn(
+            "unlock_home_space_location(Teams.get_force(record))", backfill.group(1)
+        )
+        initialize = re.search(
+            r"function Teams\.initialize\(\)(.*?)\nend",
+            teams,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(initialize)
+        self.assertIn("Teams.ensure_space_locations()", initialize.group(1))
+        # Registration migrates legacy forces first, so the backfill runs last.
+        self.assertLess(
+            initialize.group(1).index("Teams.register_force"),
+            initialize.group(1).index("Teams.ensure_space_locations()"),
+        )
+        # on_configuration_changed shares initialize_common, so updating a save
+        # heals its teams on load.
+        self.assertIn("Teams.initialize()", control)
+        common = re.search(
+            r"local function initialize_common\(\)(.*?)\nend",
+            control,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(common)
+        self.assertIn("Teams.initialize()", common.group(1))
+        self.assertIn("initialize_common()", control[control.index(
+            "script.on_configuration_changed"
+        ):])
+
+    def test_no_code_path_unlocks_a_planet_players_must_still_discover(self) -> None:
+        teams = source("src/game/teams.lua")
+        gameplay = "\n".join(
+            source(str(path.relative_to(ROOT)))
+            for path in [ROOT / "control.lua", *sorted((ROOT / "src").rglob("*.lua"))]
+        )
+        self.assertIn('local HOME_SPACE_LOCATION = "nauvis"', teams)
+        # Vulcanus, Gleba, Fulgora, Aquilo, the solar system edge and the
+        # shattered planet are all granted by technology effects that already
+        # apply per force. Handing one out would skip that progression.
+        self.assertEqual(
+            re.findall(r"unlock_space_location\(([^)]*)\)", gameplay),
+            ["HOME_SPACE_LOCATION"],
+        )
+        # The paired enemy force is AI-controlled and never opens the dialog.
+        self.assertNotIn("unlock_home_space_location(enemy_force)", teams)
+        self.assertEqual(teams.count("unlock_home_space_location("), 3)
 
 
 class EvolutionTests(unittest.TestCase):

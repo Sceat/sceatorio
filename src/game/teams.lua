@@ -12,6 +12,15 @@ local RESERVED_FORCES = {
 local LEGACY_ENEMY_PREFIX = "enemy="
 local MAX_FORCES = 64
 
+-- Space Age offers a planet in the rocket silo's platform dialog only while the
+-- force has that space location unlocked, and the engine grants the home planet
+-- to the starting force alone. Every other location is earned: base and Space
+-- Age unlock them exclusively through technology effects (planet-discovery-*,
+-- stellar-discovery-solar-system-edge, promethium-science-pack), which already
+-- apply per force on research. Nauvis is therefore the only unlock a
+-- mod-created team force is missing, and the only one it may be handed.
+local HOME_SPACE_LOCATION = "nauvis"
+
 local function starts_with(value, prefix)
   return string.sub(value, 1, #prefix) == prefix
 end
@@ -46,6 +55,19 @@ local function reset_new_force_charting(force)
       force.cancel_charting(surface)
     end
   end
+end
+
+-- Space locations are an optional Space Age concept, so both calls are probed
+-- rather than assumed: a Base-only game has no such API/prototype and this stays
+-- a no-op there. Paired enemy forces are deliberately excluded: they are
+-- AI-controlled and never open a platform dialog.
+local function unlock_home_space_location(force)
+  if not (force and force.valid) then return false end
+  local supported, unlocked = pcall(function()
+    return force.is_space_location_unlocked(HOME_SPACE_LOCATION)
+  end)
+  if not supported or unlocked then return false end
+  return pcall(function() force.unlock_space_location(HOME_SPACE_LOCATION) end)
 end
 
 local function lowest_valid_player(force, excluded_player_index)
@@ -121,6 +143,9 @@ end
 
 local function make_record(id, force, enemy_force, owner_player_index, display_name)
   local root = State.get()
+  -- The single point where a force becomes a Sceatorio team, whether it was
+  -- just created or adopted, so the home unlock has exactly one runtime home.
+  unlock_home_space_location(force)
   local record = {
     id = id,
     force_index = force.index,
@@ -445,6 +470,15 @@ local function reconcile_records()
   configure_enemy_matrix()
 end
 
+-- Saves made before 2.6.1 hold team forces that were never granted the home
+-- space location, which left them unable to create a space platform at all.
+-- Repair them on load instead of requiring an administrator command.
+function Teams.ensure_space_locations()
+  for _, record in pairs(State.get().teams_by_id) do
+    unlock_home_space_location(Teams.get_force(record))
+  end
+end
+
 function Teams.initialize()
   Teams.ensure_lobby()
   reconcile_records()
@@ -458,6 +492,8 @@ function Teams.initialize()
       end
     end
   end
+
+  Teams.ensure_space_locations()
 end
 
 -- Configuration changes may load a save made by a release that left engine
