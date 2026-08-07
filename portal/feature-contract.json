@@ -25,6 +25,16 @@
       ]
     },
     {
+      "id": "universal-enemy-hostility",
+      "label": "Nests hostile to everyone",
+      "statement": "Every team's paired enemy force is hostile to every registered human team, its own and all others alike, so no team can shelter behind another team's nests; paired enemy forces stay friendly with each other and with the vanilla enemy force, and human-team diplomacy is never written by the mod.",
+      "portal_phrase": "Every team's nests treat every player as an enemy, so no base is safe inside a rival team's nest field, while the nests themselves never fight each other.",
+      "evidence": [
+        {"path": "src/game/teams.lua", "contains": "hostile to every human team"},
+        {"path": "tests/fixtures/security/control.lua", "contains": "paired enemy is not hostile to the other human team"}
+      ]
+    },
+    {
       "id": "planet-spawns",
       "label": "Space Age planets",
       "statement": "After a team's first physical arrival, one stable separated spawn is generated asynchronously on each real planet while native terrain and progression stay intact.",

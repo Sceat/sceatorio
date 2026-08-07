@@ -21,7 +21,7 @@ class MetadataTests(unittest.TestCase):
         info = json.loads(source("info.json"))
         matrix = json.loads(source("tests/headless/matrix.json"))
         target = matrix["factorio"]["version"]
-        self.assertEqual(info["version"], "2.6.1")
+        self.assertEqual(info["version"], "2.6.2")
         self.assertEqual(info["factorio_version"], ".".join(target.split(".")[:2]))
         self.assertIn(f"base >= {target}", info["dependencies"])
         self.assertIn(f"? space-age >= {target}", info["dependencies"])
@@ -167,6 +167,36 @@ class TeamAndJoinTests(unittest.TestCase):
         self.assertIn("other.force_index", teams)
         self.assertNotIn("share_chart", teams)
         self.assertNotIn("friendly_fire", teams)
+
+    def test_paired_enemies_are_hostile_to_every_human_team(self) -> None:
+        teams = source("src/game/teams.lua")
+        matrix = re.search(
+            r"local function configure_enemy_matrix\(\)(.*?)\nend",
+            teams,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(matrix)
+        body = matrix.group(1)
+        self.assertEqual(
+            re.findall(
+                r"set_mutual_relation\(\s*owner_enemy,\s*"
+                r"get_force\(other\.force_index, other\.force_name\),\s*"
+                r"(true|false)\s*\)",
+                body,
+            ),
+            ["false"],
+        )
+        self.assertEqual(
+            re.findall(
+                r"set_mutual_relation\(\s*owner_enemy,\s*"
+                r"get_force\(other\.enemy_force_index, other\.enemy_force_name\),\s*"
+                r"(true|false)\s*\)",
+                body,
+            ),
+            ["true"],
+        )
+        self.assertNotIn("other.id ~= owner.id", body)
+        self.assertIn("hostile to every human team", body)
 
     def test_team_owner_is_reassigned_deterministically_across_lifecycle(self) -> None:
         teams = source("src/game/teams.lua")

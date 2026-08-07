@@ -107,8 +107,8 @@ script.on_nth_tick(1, function(event)
     if first_enemy.get_friend(first_force) or first_enemy.get_cease_fire(first_force) then
       fail("paired enemy is not hostile to its owner")
     end
-    if not (first_enemy.get_friend(second_force) and first_enemy.get_cease_fire(second_force)) then
-      fail("paired enemy is not isolated from the other human team")
+    if first_enemy.get_friend(second_force) or first_enemy.get_cease_fire(second_force) then
+      fail("paired enemy is not hostile to the other human team")
     end
     if not (first_enemy.get_friend(second_enemy) and first_enemy.get_friend(game.forces.enemy)) then
       fail("paired enemy families are not mutually isolated")
@@ -456,12 +456,10 @@ script.on_nth_tick(1, function(event)
       or destination_enemy.get_cease_fire(destination) then
       fail("merged destination's paired enemy is no longer hostile to its owner")
     end
-    if not (
-      destination_enemy.get_friend(third_force)
-      and destination_enemy.get_cease_fire(third_force)
-      and destination_enemy.get_friend(game.forces[fixture.third_enemy_force_name])
-    ) then
-      fail("enemy isolation matrix was not rebuilt after force merge")
+    if destination_enemy.get_friend(third_force)
+      or destination_enemy.get_cease_fire(third_force)
+      or not destination_enemy.get_friend(game.forces[fixture.third_enemy_force_name]) then
+      fail("enemy hostility matrix was not rebuilt after force merge")
     end
 
     local surface = game.surfaces.nauvis

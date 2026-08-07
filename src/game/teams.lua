@@ -165,27 +165,27 @@ local function configure_enemy_matrix()
   local root = State.get()
   local default_enemy = game.forces.enemy
   for _, owner in pairs(root.teams_by_id) do
-    local owner_team = get_force(owner.force_index, owner.force_name)
     local owner_enemy = get_force(owner.enemy_force_index, owner.enemy_force_name)
-    if owner_team and owner_enemy then
+    if owner_enemy then
       owner_enemy.ai_controllable = true
-      -- A paired enemy is hostile only to its owning human team. Human-team
-      -- diplomacy is deliberately left to vanilla/admin/social decisions.
-      set_mutual_relation(owner_team, owner_enemy, false)
+      -- A paired enemy is hostile to every human team, not only to the team it
+      -- belongs to: while foreign nests were friendly, a base walled inside a
+      -- rival team's nest field was permanently safe from biters. Paired enemies
+      -- stay friendly with each other and with the vanilla enemy force so nests
+      -- never fight nests, and human-team diplomacy is still left to
+      -- vanilla/admin/social decisions.
       set_mutual_relation(owner_enemy, default_enemy, true)
       for _, other in pairs(root.teams_by_id) do
-        if other.id ~= owner.id then
-          set_mutual_relation(
-            owner_enemy,
-            get_force(other.force_index, other.force_name),
-            true
-          )
-          set_mutual_relation(
-            owner_enemy,
-            get_force(other.enemy_force_index, other.enemy_force_name),
-            true
-          )
-        end
+        set_mutual_relation(
+          owner_enemy,
+          get_force(other.force_index, other.force_name),
+          false
+        )
+        set_mutual_relation(
+          owner_enemy,
+          get_force(other.enemy_force_index, other.enemy_force_name),
+          true
+        )
       end
     end
   end
