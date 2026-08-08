@@ -26,6 +26,8 @@ The policy aggregates a team's robots across every fixed logistic network and su
 
 Space Age is an optional dependency. A team's first physical arrival on each real planet starts bounded asynchronous generation of one stable, separated spawn. Space platforms and remote-view surfaces are excluded. Native resources, tiles, cliffs, and planet progression are preserved.
 
+Vulcanus has no territory-free distant starting region: beyond the shared center, its map is divided among demolishers. Sceatorio therefore uses Oarc's exact temporary workaround instead of rejecting every territory forever. Segmented demolisher entities are tracked as Factorio creates them, one is checked per tick, and it is destroyed only after moving within six chunks (192 tiles) of the nearest team spawn. That grants the territory for free and can leave a larger-than-normal starting territory; distant teams may also encounter medium or big demolishers because the mod does not downgrade them.
+
 ## Is AI Assistance available in-game?
 
 Yes, but it is optional and off by default. The server administrator must enable it, the force must research the single red-science **AI Assistance** technology and power an AI Uplink, and a player must create a short-lived, one-time pairing code at that Uplink, which is that player's own explicit opt-in. The local stdio companion is built separately from this GitHub source—it is not embedded in the Mod Portal ZIP—and exposes 29 low-level, scope-checked MCP tools for telemetry, structured blueprints, dedicated circuit ports, events, and private annotations.

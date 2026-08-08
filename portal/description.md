@@ -5,7 +5,7 @@ Sceatorio is a friendly multiplayer scenario mode for groups that want the same 
 - Create a separate team and distant starting area, or request an owner-approved join to a friend.
 - Enemy evolution is tracked per team and per surface from connected time, own worm/spawner kills, and new pollution consumed by nests on that surface.
 - Every team's nests treat every player as an enemy, so no base is safe inside a rival team's nest field, while the nests themselves never fight each other.
-- With Space Age enabled, each team receives one stable separated spawn after physically reaching a new planet; platforms and remote view are excluded.
+- With Space Age enabled, each team receives one stable separated spawn after physically reaching a new planet; platforms and remote view are excluded. On Vulcanus, the Oarc workaround removes a tracked demolisher only if it enters the six-chunk warning radius around a team spawn.
 - Electric networks are isolated by default; deliberate sharing requires both team owners to opt in.
 - Connected players and team radars share their nearby, already-generated map discovery with every registered human team, without merging forces, economies, evolution, or electric networks.
 - The compact top-left player panel shows exact online/offline totals and every friend's cumulative playtime without growing indefinitely; each section has simple pages when needed.

@@ -1,5 +1,6 @@
 local Teams = require("src.game.teams")
 local Spawns = require("src.game.spawns")
+local PlanetSpawns = require("src.game.planetSpawns")
 local Message = require("src.utils.msg")
 
 local Admin = {}
@@ -187,6 +188,35 @@ local function apply_settings(event)
   for _, line in ipairs(rejected) do reply(event, line) end
 end
 
+local function regenerate_vulcanus_spawn(event)
+  local _, allowed = command_player(event)
+  if not allowed then
+    reply(event, "SCEATORIO_VULCANUS_REGEN_ERROR=Administrator permission is required.")
+    return
+  end
+  local name = event.parameter or ""
+  if name == "" then
+    reply(event, "SCEATORIO_VULCANUS_REGEN_ERROR=Player name is required.")
+    return
+  end
+  local player = game.get_player(name)
+  if not player then
+    reply(event, "SCEATORIO_VULCANUS_REGEN_ERROR=Player was not found: " .. name)
+    return
+  end
+  local record = Teams.get_for_player(player)
+  if not record then
+    reply(event, "SCEATORIO_VULCANUS_REGEN_ERROR=Player has no Sceatorio team: " .. name)
+    return
+  end
+  local ok, status = PlanetSpawns.regenerate_vulcanus_spawn(record, player)
+  if not ok then
+    reply(event, "SCEATORIO_VULCANUS_REGEN_ERROR=" .. status)
+    return
+  end
+  reply(event, "SCEATORIO_VULCANUS_REGEN_QUEUED player=" .. player.name .. " status=" .. status)
+end
+
 commands.add_command("equalize_all", "Remove enemy structures assigned outside their team territory.", equalize_all)
 commands.add_command("eradicate", "Remove a player and, if empty, their isolated team spawn.", eradicate)
 commands.add_command(
@@ -194,9 +224,15 @@ commands.add_command(
   "Reconcile Sceatorio runtime-global settings from one JSON object (admin or RCON only).",
   apply_settings
 )
+commands.add_command(
+  "sceatorio-regenerate-vulcanus-spawn",
+  "Generate a fresh Vulcanus team spawn and route the named player there (admin or RCON only).",
+  regenerate_vulcanus_spawn
+)
 
 Admin.equalize_all = equalize_all
 Admin.eradicate = eradicate
 Admin.apply_settings = apply_settings
+Admin.regenerate_vulcanus_spawn = regenerate_vulcanus_spawn
 
 return Admin

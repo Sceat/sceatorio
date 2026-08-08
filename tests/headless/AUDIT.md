@@ -130,9 +130,11 @@ machine:
 - Candidate work is bounded and uses only `request_to_generate_chunks` plus
   generated-chunk checks. It does not paint tiles, add resources, remove cliffs
   or decoratives, or synchronously force secondary chunks.
-- Vulcanus candidates avoid demolisher territories. Immediate hostile clearing
-  is limited to conventional Nauvis/Gleba units, spawners, and turrets;
-  segmented units and unknown-planet mechanics are untouched.
+- Vulcanus accepts native demolisher territories because every distant point is
+  territorial. Matching Oarc, `on_segment_entity_created` tracks the three
+  demolisher sizes and one tracked entity is checked per tick; one is destroyed
+  only inside the fixed six-chunk radius around its nearest spawn. Immediate
+  hostile clearing remains limited to conventional Nauvis/Gleba entities.
 - Player arrival uses `player.character.surface`, so Space Age remote view does
   not allocate a false spawn. Join, respawn, cargo-pod, force-merge, runtime
   setting, and surface-deletion paths are wired.
@@ -230,7 +232,7 @@ must not grant progression resources.
 | Planet | Default behavior | Explicitly avoid |
 | --- | --- | --- |
 | Nauvis | Find buildable land, clear a compact hostile radius, preserve native patches for secondary spawns. The legacy rich bundle may remain an initial-Nauvis-only option. | Applying starter resources repeatedly per teammate. |
-| Vulcanus | Select compact safe ground outside a demolisher territory; preserve lava and native ash terrain. | Creating tungsten/calcite, deleting or changing segmented-unit territories, or re-forcing individual demolisher segments. |
+| Vulcanus | Select compact native ground in the separated territory and apply Oarc's one-tracked-demolisher-per-tick six-chunk warning-radius workaround. | Creating tungsten/calcite, rewriting terrain/territory data, scanning all demolishers per tick, or downgrading distant demolisher sizes. |
 | Fulgora | Pick valid island ground and preserve lightning/ruin mechanics. | Deleting vault ruins/fulgurite or painting across oil ocean. |
 | Gleba | Pick buildable native biome tiles and clear only a compact immediate pentapod danger area. | Creating agricultural soil, yumako/jellynut plants, or stromatolites, which bypasses progression. |
 | Aquilo | Find a non-colliding heated/buildable arrival point, normally near a force landing pad. | Giving lithium brine/fluorine/crude oil or replacing broad ammoniacal-ocean/snow terrain. |
@@ -484,8 +486,9 @@ Things to improve rather than copy:
 - Rich profiles can bypass progression: Vulcanus creates tungsten, Fulgora
   creates ruins/scrap, Gleba creates soils/crops, and Aquilo creates planetary
   fluids. Preserve-native should be the default.
-- `scaled_enemies.lua:4-18` still marks Space Age work TODO; its demolisher loop
-  (`337-390`) performs one removal per tick. Prefer choosing outside territories.
+- `scaled_enemies.lua:337-390` supplies the temporary demolisher behavior used
+  here: segment-creation tracking followed by one warning-radius check per tick.
+  The territory API cannot supply a territory-free distant Vulcanus spawn.
 - `spawn_area_generation.lua:387-411` hardcodes force `player` for Fulgora
   lightning attractors instead of the actual team force.
 

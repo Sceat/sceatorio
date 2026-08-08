@@ -7,7 +7,17 @@ local PlanetSpawns = {}
 local CHUNK_SIZE = 32
 local CANDIDATES_PER_RING = 8
 local CANDIDATE_BUDGET = 8
+local MAX_CANDIDATE_ATTEMPTS = 64
 local PROCESS_BUDGET = 2
+-- Match Oarc's temporary Vulcanus workaround exactly: a six-chunk warning
+-- radius, event-tracked segmented entities, and one entity checked per tick.
+local VULCANUS_DEMOLISHER_SAFE_RADIUS = 6 * CHUNK_SIZE
+local VULCANUS_POLICY_VERSION = 1
+local DEMOLISHER_NAMES = {
+  ["big-demolisher"] = true,
+  ["medium-demolisher"] = true,
+  ["small-demolisher"] = true
+}
 
 local function setting(name, fallback)
   local value = settings.global[name]
@@ -79,6 +89,54 @@ local function distance_squared(first, second)
   return dx * dx + dy * dy
 end
 
+local function demolisher_tracker()
+  local root = State.get()
+  root.demolisher_tracker = root.demolisher_tracker or {}
+  root.demolisher_tracker.demolishers = root.demolisher_tracker.demolishers or {}
+  return root.demolisher_tracker
+end
+
+function PlanetSpawns.on_segment_entity_created(event)
+  local entity = event.entity
+  if not (entity and entity.valid and entity.type == "segmented-unit") then return end
+  if not (DEMOLISHER_NAMES[entity.name] and entity.unit_number) then return end
+  local tracker = demolisher_tracker()
+  if tracker.demolishers[entity.unit_number] == nil then
+    tracker.demolishers[entity.unit_number] = entity
+  end
+end
+
+-- Oarc's workaround intentionally checks a single tracked demolisher each
+-- tick. Destroying the segment entity removes the demolisher and grants its
+-- territory without rewriting tiles, resources, or territory data.
+function PlanetSpawns.on_tick()
+  if not enabled() then return end
+  local tracker = demolisher_tracker()
+  local index, next_demolisher = next(tracker.demolishers, tracker.index)
+  if next_demolisher == nil then
+    tracker.index = nil
+    return
+  end
+
+  if next_demolisher.valid then
+    local closest_spawn = Teams.find_nearest(
+      next_demolisher.surface,
+      next_demolisher.position
+    )
+    if closest_spawn.team == nil then return end
+    if closest_spawn.distance < VULCANUS_DEMOLISHER_SAFE_RADIUS then
+      next_demolisher.destroy()
+      tracker.demolishers[index] = nil
+      tracker.index = nil
+    else
+      tracker.index = index
+    end
+  else
+    tracker.demolishers[index] = nil
+    tracker.index = nil
+  end
+end
+
 local function sufficiently_separated(record, surface, position)
   local minimum_squared = separation() * separation()
   local accepted = true
@@ -111,6 +169,7 @@ end
 
 local function choose_candidate(record, surface, metadata)
   for _ = 1, CANDIDATE_BUDGET do
+    if metadata.attempt >= MAX_CANDIDATE_ATTEMPTS then return false end
     local candidate = candidate_for(metadata.anchor, record.id, metadata.attempt)
     metadata.attempt = metadata.attempt + 1
     if sufficiently_separated(record, surface, candidate) then
@@ -133,7 +192,9 @@ local function mark_existing_primary(record, surface, surface_record)
     planet_name = planet and planet.name or surface.name,
     created_tick = game.tick,
     preserve_native = true,
-    migrated_existing = true
+    migrated_existing = true,
+    vulcanus_policy_version = planet and planet.name == "vulcanus"
+      and VULCANUS_POLICY_VERSION or nil
   }
   local force = Teams.get_force(record)
   if force then force.set_spawn_position(surface_record.spawn, surface) end
@@ -184,7 +245,9 @@ function PlanetSpawns.request_spawn(record, surface, anchor, player, reason)
     anchor = copy_position(anchor),
     attempt = 0,
     created_tick = game.tick,
-    waiting_players = {}
+    waiting_players = {},
+    vulcanus_policy_version = planet and planet.name == "vulcanus"
+      and VULCANUS_POLICY_VERSION or nil
   }
   add_waiter(surface_record.planet_spawn, player, reason, anchor)
   choose_candidate(record, surface, surface_record.planet_spawn)
@@ -197,18 +260,6 @@ local function generated(surface, position)
     x = math.floor(position.x / CHUNK_SIZE),
     y = math.floor(position.y / CHUNK_SIZE)
   })
-end
-
-local function in_vulcanus_territory(surface, metadata)
-  if metadata.planet_name ~= "vulcanus" then return false end
-  local chunk = {
-    x = math.floor(metadata.candidate.x / CHUNK_SIZE),
-    y = math.floor(metadata.candidate.y / CHUNK_SIZE)
-  }
-  local ok, territory = pcall(function()
-    return surface.get_territory_for_chunk(chunk)
-  end)
-  return ok and territory ~= nil
 end
 
 local function hostile_generation_area(position)
@@ -242,7 +293,7 @@ end
 local function clear_immediate_hostiles(record, surface, position, planet_name)
   -- Segmented units (demolishers), resources, cliffs, tiles, decoratives, and
   -- unknown-planet entities are deliberately outside this native-preserving
-  -- safety pass.
+  -- safety pass. Vulcanus demolishers use the separate Oarc tracker above.
   if not SurfacePolicy.is_native_hostile_surface(surface) then return end
   local own_enemy = Teams.get_enemy_force(record)
   for _, entity in pairs(surface.find_entities_filtered({
@@ -277,7 +328,12 @@ local function route_waiters(record, surface, metadata, spawn)
       end
       if route then
         if player.teleport(spawn, surface) then
-          player.print({"sceatorio.planet-spawn-ready", metadata.planet_name})
+          if metadata.relocate_player_index == player.index then
+            metadata.relocate_player_index = nil
+            player.print({"sceatorio.planet-spawn-regenerated", metadata.planet_name})
+          else
+            player.print({"sceatorio.planet-spawn-ready", metadata.planet_name})
+          end
         else
           player.print({"sceatorio.teleport-failed"})
         end
@@ -319,18 +375,64 @@ local function route_cargo_pods(surface, metadata, spawn)
   metadata.cargo_pods = nil
 end
 
+local function notify_native_fallback(record, planet_name)
+  local force = Teams.get_force(record)
+  if force and force.valid then
+    force.print({"sceatorio.planet-spawn-native-fallback", planet_name})
+  end
+end
+
+local function use_native_fallback(record, surface, surface_record)
+  local metadata = surface_record.planet_spawn
+  if not metadata then return true end
+  route_cargo_pods(nil, metadata, nil)
+  if metadata.fallback_spawn then
+    local fallback = copy_position(metadata.fallback_spawn)
+    surface_record.spawn = fallback
+    surface_record.terrain_ready = true
+    metadata.state = "ready"
+    metadata.candidate = nil
+    metadata.anchor = nil
+    metadata.fallback_spawn = nil
+    metadata.queued = false
+    local force = Teams.get_force(record)
+    if force and force.valid then force.set_spawn_position(fallback, surface) end
+    route_waiters(record, surface, metadata, fallback)
+    notify_native_fallback(record, metadata.planet_name)
+    return true
+  end
+  metadata.state = "native"
+  metadata.candidate = nil
+  metadata.anchor = nil
+  metadata.queued = false
+  metadata.waiting_players = nil
+  notify_native_fallback(record, metadata.planet_name)
+  return true
+end
+
+local function advance_candidate(record, surface, surface_record)
+  local metadata = surface_record.planet_spawn
+  metadata.candidate = nil
+  if choose_candidate(record, surface, metadata) then return false end
+  if metadata.attempt >= MAX_CANDIDATE_ATTEMPTS then
+    return use_native_fallback(record, surface, surface_record)
+  end
+  return false
+end
+
 local function finalize(record, surface, surface_record)
   local metadata = surface_record.planet_spawn
+  if metadata.attempt > MAX_CANDIDATE_ATTEMPTS then
+    return use_native_fallback(record, surface, surface_record)
+  end
   if not metadata.candidate then
-    choose_candidate(record, surface, metadata)
+    if not choose_candidate(record, surface, metadata)
+      and metadata.attempt >= MAX_CANDIDATE_ATTEMPTS then
+      return use_native_fallback(record, surface, surface_record)
+    end
     return false
   end
   if not generated(surface, metadata.candidate) then return false end
-  if in_vulcanus_territory(surface, metadata) then
-    metadata.candidate = nil
-    choose_candidate(record, surface, metadata)
-    return false
-  end
 
   local character_name = "character"
   for player_index in pairs(metadata.waiting_players or {}) do
@@ -347,9 +449,7 @@ local function finalize(record, surface, surface_record)
     1
   )
   if not spawn or not sufficiently_separated(record, surface, spawn) then
-    metadata.candidate = nil
-    choose_candidate(record, surface, metadata)
-    return false
+    return advance_candidate(record, surface, surface_record)
   end
 
   reassign_existing_default_hostiles(surface, metadata.candidate, metadata.planet_name)
@@ -375,6 +475,7 @@ local function process_entry(entry)
   local surface_record = Teams.get_surface(record, surface)
   if not (surface_record and surface_record.planet_spawn) then return true end
   if surface_record.planet_spawn.state == "ready" then return true end
+  if surface_record.planet_spawn.state == "native" then return true end
   return finalize(record, surface, surface_record)
 end
 
@@ -397,6 +498,52 @@ function PlanetSpawns.tick()
   end
 end
 
+-- Administrator recovery path for a team that already received a Vulcanus
+-- spawn under the former territory-rejection policy. It allocates a fresh
+-- distant spawn, keeps the old one as a fail-open fallback, and records one
+-- player for routing even when that player is offline during generation.
+function PlanetSpawns.regenerate_vulcanus_spawn(record, player)
+  if not enabled() then return false, "Planet spawns are disabled." end
+  if not (record and player and player.valid) then return false, "Player or team is unavailable." end
+  local surface = game.surfaces["vulcanus"]
+  if not (surface and surface.valid and SurfacePolicy.is_real_planet(surface)) then
+    return false, "The Vulcanus surface is unavailable."
+  end
+  local surface_record = Teams.get_surface(record, surface)
+  local metadata = surface_record and surface_record.planet_spawn or nil
+  if not (surface_record and surface_record.spawn and metadata and metadata.state == "ready") then
+    if metadata and metadata.state == "generating" then
+      metadata.relocate_player_index = player.index
+      metadata.vulcanus_policy_version = VULCANUS_POLICY_VERSION
+      add_waiter(metadata, player, "team-join", surface_record.spawn)
+      enqueue(record, surface_record)
+      return true, "already-generating"
+    end
+    return false, "That team has no ready Vulcanus spawn to regenerate."
+  end
+
+  local old_spawn = copy_position(surface_record.spawn)
+  if metadata.cargo_pods then route_cargo_pods(surface, metadata, old_spawn) end
+  surface_record.spawn = nil
+  surface_record.terrain_ready = false
+  surface_record.planet_spawn = {
+    state = "generating",
+    planet_name = "vulcanus",
+    preserve_native = true,
+    anchor = old_spawn,
+    attempt = 1,
+    created_tick = game.tick,
+    waiting_players = {},
+    vulcanus_policy_version = VULCANUS_POLICY_VERSION,
+    relocate_player_index = player.index,
+    fallback_spawn = old_spawn
+  }
+  add_waiter(surface_record.planet_spawn, player, "team-join", old_spawn)
+  choose_candidate(record, surface, surface_record.planet_spawn)
+  enqueue(record, surface_record)
+  return true, "queued"
+end
+
 local function ensure_physical_arrival(player, reason)
   local record = Teams.get_for_player(player)
   if not record then return nil end
@@ -406,9 +553,34 @@ local function ensure_physical_arrival(player, reason)
   return PlanetSpawns.request_spawn(record, surface, position, player, reason)
 end
 
+local function route_regenerated_vulcanus_spawn(player)
+  local record = Teams.get_for_player(player)
+  if not record then return end
+  for surface_index, surface_record in pairs(record.surfaces or {}) do
+    local metadata = surface_record.planet_spawn
+    if metadata and metadata.planet_name == "vulcanus"
+      and metadata.relocate_player_index == player.index then
+      local surface = game.surfaces[surface_index]
+      if surface and surface.valid and metadata.state == "ready" and surface_record.spawn then
+        if player.teleport(surface_record.spawn, surface) then
+          metadata.relocate_player_index = nil
+          player.print({"sceatorio.planet-spawn-regenerated", metadata.planet_name})
+        else
+          player.print({"sceatorio.teleport-failed"})
+        end
+      elseif surface and surface.valid and metadata.state ~= "native" then
+        add_waiter(metadata, player, "team-join", surface_record.spawn)
+        enqueue(record, surface_record)
+      end
+    end
+  end
+end
+
 function PlanetSpawns.on_player_joined(event)
   local player = game.players[event.player_index]
-  if player and player.valid then ensure_physical_arrival(player, "arrival") end
+  if not (player and player.valid) then return end
+  ensure_physical_arrival(player, "arrival")
+  route_regenerated_vulcanus_spawn(player)
 end
 
 function PlanetSpawns.on_player_changed_force(event)
@@ -521,7 +693,8 @@ function PlanetSpawns.initialize()
       local metadata = surface_record.planet_spawn
       if metadata and metadata.state ~= "ready" then
         local surface = game.surfaces[surface_index]
-        if surface and surface.valid and PlanetSpawns.is_supported(surface) then
+        if surface and surface.valid and PlanetSpawns.is_supported(surface)
+          and metadata.state ~= "native" then
           enqueue(record, surface_record)
         end
       end
@@ -592,7 +765,7 @@ function PlanetSpawns.debug_route_player(player, surface)
     return false, "A physical character is required."
   end
   if not PlanetSpawns.is_supported(surface) then
-    return false, "The selected surface is not an enabled real planet."
+    return false, "The selected surface does not use custom team spawns."
   end
   local record = Teams.get_for_player(player)
   if not record then return false, "Join a Sceatorio team first." end

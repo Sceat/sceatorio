@@ -1,8 +1,9 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.6.2
-Date: 2026-08-07
+Date: 2026-08-08
   Bugfixes:
     - Fixed another team's biters ignoring you completely. Each team gets its own nests so that evolution stays its own, but those nests were made friendly with every other team, so the moment you walked away from your own territory nothing wanted to bite you: a base built inside a rival team's nest field was permanently safe, and walling into someone else's swarm was the cheapest defence in the game. Every team's nests now treat every player as an enemy, whichever team they belong to, so there is no longer anywhere on the map that biters leave you alone. The nests themselves still never fight each other, and each team's evolution is still its own: what your neighbours provoke never raises your own biters.
+    - Fixed Vulcanus team arrivals generating chunks forever. Every distant Vulcanus point belongs to a demolisher territory, so rejecting all territories made the allocator impossible to finish. Vulcanus now uses Oarc's bounded workaround exactly: accept the native territory, track segmented demolishers as Factorio creates them, and check one per tick, destroying it only if it enters the six-chunk spawn warning radius. Candidate allocation also has a hard search limit and releases held cargo to native arrival if any planet cannot produce a separated safe point. An administrator can regenerate one affected team's Vulcanus spawn and persist a requested player's teleport until they next join, while the old spawn remains the fail-open fallback.
 ---------------------------------------------------------------------------------------------------
 Version: 2.6.1
 Date: 2026-08-04

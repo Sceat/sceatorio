@@ -37,11 +37,11 @@
     {
       "id": "planet-spawns",
       "label": "Space Age planets",
-      "statement": "After a team's first physical arrival, one stable separated spawn is generated asynchronously on each real planet while native terrain and progression stay intact.",
-      "portal_phrase": "With Space Age enabled, each team receives one stable separated spawn after physically reaching a new planet; platforms and remote view are excluded.",
+      "statement": "After a team's first physical arrival, one stable separated spawn is generated asynchronously on each real planet while native terrain and progression stay intact; on Vulcanus, the Oarc workaround grants a spawn territory by destroying a tracked demolisher only if it enters the fixed six-chunk warning radius.",
+      "portal_phrase": "With Space Age enabled, each team receives one stable separated spawn after physically reaching a new planet; platforms and remote view are excluded. On Vulcanus, the Oarc workaround removes a tracked demolisher only if it enters the six-chunk warning radius around a team spawn.",
       "evidence": [
         {"path": "src/game/planetSpawns.lua", "contains": "function PlanetSpawns.request_spawn"},
-        {"path": "src/game/planetSpawns.lua", "contains": "preserve_native = true"}
+        {"path": "src/game/planetSpawns.lua", "contains": "VULCANUS_DEMOLISHER_SAFE_RADIUS = 6 * CHUNK_SIZE"}
       ]
     },
     {

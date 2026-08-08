@@ -91,7 +91,7 @@ Default: `true`.
 
 `sceatorio-planet-spawns-enabled` · `runtime-global` · `bool`
 
-Records one stable spawn for each team on each real planet after the first physical arrival. Space platforms and remote-view surfaces are excluded.
+Records one stable spawn for each team on each real planet after the first physical arrival. Space platforms and remote-view surfaces are excluded. On Vulcanus, the Oarc workaround destroys a tracked demolisher only when it enters the six-chunk warning radius around the nearest team spawn, granting that territory without rewriting terrain.
 
 Default: `true`.
 
@@ -99,7 +99,7 @@ Default: `true`.
 
 `sceatorio-planet-spawn-safety-radius` · `runtime-global` · `int`
 
-Search radius for a non-colliding character position and, on Nauvis or Gleba only, the immediate hostile clearing radius. Native tiles, resources, cliffs, decoratives, and special enemies are never rewritten.
+Search radius for a non-colliding character position and, on Nauvis or Gleba only, the immediate conventional-hostile clearing radius. Native tiles, resources, cliffs, and decoratives are never rewritten. Vulcanus demolishers use a separate fixed six-chunk warning radius.
 
 Default: `48`.
 

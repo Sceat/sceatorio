@@ -16,6 +16,7 @@ local function new_root()
     player_character_surfaces = {},
     planet_spawn_queue = {},
     planet_spawn_cursor = 1,
+    demolisher_tracker = {demolishers = {}, index = nil},
     player_list_collapsed = {},
     player_list_pages = {},
     player_list_cursor = 1,
@@ -87,6 +88,8 @@ function State.initialize()
   root.player_character_surfaces = root.player_character_surfaces or {}
   root.planet_spawn_queue = root.planet_spawn_queue or {}
   root.planet_spawn_cursor = root.planet_spawn_cursor or 1
+  root.demolisher_tracker = root.demolisher_tracker or {}
+  root.demolisher_tracker.demolishers = root.demolisher_tracker.demolishers or {}
   root.player_list_collapsed = root.player_list_collapsed or {}
   root.player_list_pages = root.player_list_pages or {}
   root.player_list_cursor = root.player_list_cursor or 1

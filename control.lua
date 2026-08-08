@@ -169,6 +169,12 @@ if defines.events.on_cargo_pod_started_ascending then
     PlanetSpawns.on_cargo_pod_started_ascending
   )
 end
+if defines.events.on_segment_entity_created then
+  script.on_event(
+    defines.events.on_segment_entity_created,
+    PlanetSpawns.on_segment_entity_created
+  )
+end
 
 script.on_event(defines.events.on_console_chat, Chat.forward)
 script.on_event(defines.events.on_research_started, function(event)
@@ -292,6 +298,7 @@ script.on_nth_tick(30, Security.tick)
 script.on_event(defines.events.on_tick, function(event)
   Security.on_tick(event)
   OfflineSecurity.on_tick(event)
+  PlanetSpawns.on_tick(event)
   RobotPolicy.on_tick(event)
   AiGateway.poll(event)
 end)

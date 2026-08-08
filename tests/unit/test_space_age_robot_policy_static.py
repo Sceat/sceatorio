@@ -51,6 +51,42 @@ class PlanetSpawnTests(unittest.TestCase):
         self.assertNotIn("destroy_decoratives", planets)
         self.assertNotRegex(planets, r'type\s*=\s*["\']resource["\']')
 
+    def test_vulcanus_uses_oarc_bounded_demolisher_workaround(self) -> None:
+        planets = source("src/game/planetSpawns.lua")
+        control = source("control.lua")
+        self.assertIn("VULCANUS_DEMOLISHER_SAFE_RADIUS = 6 * CHUNK_SIZE", planets)
+        for name in ("big-demolisher", "medium-demolisher", "small-demolisher"):
+            self.assertIn(name, planets)
+        self.assertIn("function PlanetSpawns.on_segment_entity_created(event)", planets)
+        self.assertIn("defines.events.on_segment_entity_created", control)
+        self.assertIn("PlanetSpawns.on_tick(event)", control)
+        tick = planets.split("function PlanetSpawns.on_tick()", 1)[1]
+        tick = tick.split("local function sufficiently_separated", 1)[0]
+        self.assertEqual(tick.count("next(tracker.demolishers, tracker.index)"), 1)
+        self.assertNotIn("for ", tick)
+        self.assertIn("Teams.find_nearest", tick)
+        self.assertIn("next_demolisher.destroy()", tick)
+        self.assertNotIn("get_territory_for_chunk", planets)
+
+    def test_planet_candidate_search_has_a_fail_open_hard_limit(self) -> None:
+        planets = source("src/game/planetSpawns.lua")
+        self.assertIn("MAX_CANDIDATE_ATTEMPTS = 64", planets)
+        self.assertIn("metadata.attempt >= MAX_CANDIDATE_ATTEMPTS", planets)
+        self.assertIn('metadata.state = "native"', planets)
+        self.assertIn("route_cargo_pods(nil, metadata, nil)", planets)
+        self.assertIn("planet-spawn-native-fallback", planets)
+
+    def test_targeted_vulcanus_regeneration_survives_an_offline_player(self) -> None:
+        planets = source("src/game/planetSpawns.lua")
+        admin = source("src/game/admin.lua")
+        self.assertIn("function PlanetSpawns.regenerate_vulcanus_spawn", planets)
+        self.assertIn("attempt = 1", planets)
+        self.assertIn("fallback_spawn = old_spawn", planets)
+        self.assertIn("relocate_player_index = player.index", planets)
+        self.assertIn("route_regenerated_vulcanus_spawn(player)", planets)
+        self.assertIn('"sceatorio-regenerate-vulcanus-spawn"', admin)
+        self.assertIn("command_player(event)", admin)
+
     def test_existing_generated_hostiles_are_reconciled_in_a_bounded_area(self) -> None:
         planets = source("src/game/planetSpawns.lua")
         self.assertIn("hostile_generation_area", planets)
